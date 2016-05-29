@@ -6,6 +6,7 @@ import com.google.common.primitives.UnsignedBytes;
 import com.google.common.primitives.UnsignedInts;
 
 import java.math.BigInteger;
+import java.util.Arrays;
 
 import static com.google.common.base.Preconditions.checkArgument;
 
@@ -14,8 +15,28 @@ public class ID {
 
     private byte[] mData = new byte[NUM_BYTES];
 
+    public static ID fromBase64String(String str) {
+        byte[] data = BaseEncoding.base64Url().decode(str);
+        return new ID(data, 0);
+    }
+
     public ID(byte[] buf, int offset) {
         System.arraycopy(buf, offset, mData, 0, NUM_BYTES);
+    }
+
+    @Override
+    public int hashCode() {
+        return Arrays.hashCode(mData);
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if(obj instanceof ID) {
+            ID o = (ID) obj;
+            return Arrays.equals(mData, o.mData);
+        } else {
+            return false;
+        }
     }
 
     public String toString(BaseEncoding encoding) {
