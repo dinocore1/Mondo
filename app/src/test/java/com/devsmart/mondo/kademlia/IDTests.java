@@ -1,6 +1,9 @@
 package com.devsmart.mondo.kademlia;
 
 import org.junit.Test;
+
+import java.math.BigInteger;
+
 import static org.junit.Assert.*;
 
 public class IDTests {
@@ -13,15 +16,44 @@ public class IDTests {
 
     @Test
     public void testIDDistanceEqual() {
-        ID a = createShortId(0b1);
-        ID b = createShortId(0b1);
-        assertEquals(0, a.compareTo(b));
+        ID a = createShortId(-1);
+        ID b = createShortId(-1);
+
+        BigInteger distance = a.getIntDistance(b);
+        assertEquals(0, distance.intValue());
     }
 
     @Test
-    public void testIDDistance() {
-        ID a = createShortId(0b10);
-        ID b = createShortId(0b1);
-        assertTrue(a.compareTo(b) > 0);
+    public void testIDDistanceReflexive() {
+        ID a = createShortId(0b01);
+        ID b = createShortId(0b00);
+
+        BigInteger ab = a.getIntDistance(b);
+        BigInteger ba = b.getIntDistance(a);
+
+        assertTrue(ab.compareTo(BigInteger.ZERO) > 0);
+        assertEquals(ab, ba);
+    }
+
+    @Test
+    public void testNumSharedPrefixBits() {
+        ID a = createShortId(0b10000000);
+        ID b = createShortId(0b10000000);
+
+        int sharedBits = a.getNumSharedPrefixBits(b);
+        assertEquals(160, sharedBits);
+
+        b = createShortId(0b00000000);
+        sharedBits = a.getNumSharedPrefixBits(b);
+        assertEquals(0, sharedBits);
+
+        b = createShortId(0b11000000);
+        sharedBits = a.getNumSharedPrefixBits(b);
+        assertEquals(1, sharedBits);
+
+        b = createShortId(0b10100000);
+        sharedBits = a.getNumSharedPrefixBits(b);
+        assertEquals(2, sharedBits);
+
     }
 }
