@@ -1,9 +1,10 @@
-apply plugin: 'java'
 
-repositories {
-  mavenCentral()
-}
+def reed_solomon = project(':libraries:JavaReedSolomon')
 
-dependencies {
-  testCompile 'org.junit:junit:4.12'
+project.ext.set('reed_solomon', reed_solomon)
+
+allprojects {
+    repositories {
+        mavenCentral()
+    }
 }
