@@ -24,6 +24,29 @@ public class ID {
         System.arraycopy(buf, offset, mData, 0, NUM_BYTES);
     }
 
+    /**
+     * Compare the distance between ac and bc. Return -1 if ac < bc,
+     * 1 if ac > bc and 0 if ac == bc.
+     * @param a
+     * @param b
+     * @param c
+     * @return
+     */
+    public static int compareDistance(ID a, ID b, ID c) {
+        for(int i=0;i<NUM_BYTES;i++) {
+            int ac = a.mData[i] ^ c.mData[i];
+            int bc = b.mData[i] ^ c.mData[i];
+
+            if(ac < bc) {
+                return -1;
+            } else if(ac > bc) {
+                return 1;
+            }
+        }
+
+        return 0;
+    }
+
     @Override
     public int hashCode() {
         return Arrays.hashCode(mData);

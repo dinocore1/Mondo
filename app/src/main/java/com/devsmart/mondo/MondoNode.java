@@ -2,6 +2,7 @@ package com.devsmart.mondo;
 
 
 import com.devsmart.mondo.kademlia.ID;
+import com.devsmart.mondo.kademlia.Message;
 import com.google.common.base.Throwables;
 import com.google.common.io.BaseEncoding;
 import com.google.gson.Gson;
@@ -130,12 +131,23 @@ public class MondoNode {
                 mDatagramSocket.receive(msg.mPacket);
                 msg.parseData();
 
+                switch(msg.getType()) {
+                    case Message.PING:
+                        handlePing(msg);
+                        break;
+                }
+
 
             } catch (Exception e) {
                 Throwables.propagate(e);
             }
         }
     };
+
+    private void handlePing(Message msg) {
+
+
+    }
 
     public static void main(String[] args) {
         String userHome = System.getProperty("user.home");

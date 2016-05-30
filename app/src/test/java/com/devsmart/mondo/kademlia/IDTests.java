@@ -36,6 +36,27 @@ public class IDTests {
     }
 
     @Test
+    public void testCompareDistance() {
+        ID a = createShortId(0b01);
+        ID b = createShortId(0b00);
+        ID c = createShortId(0b00);
+
+        assertEquals(1, ID.compareDistance(a, b, c));
+
+        a = createShortId(0b00);
+        b = createShortId(0b01);
+        assertEquals(-1, ID.compareDistance(a, b, c));
+
+        a = createShortId(0b00);
+        b = createShortId(0b00);
+        assertEquals(0, ID.compareDistance(a, b, c));
+
+        a = createShortId(0b00);
+        b = createShortId(0b10);
+        assertEquals(-1, ID.compareDistance(a, b, c));
+    }
+
+    @Test
     public void testNumSharedPrefixBits() {
         ID a = createShortId(0b10000000);
         ID b = createShortId(0b10000000);
