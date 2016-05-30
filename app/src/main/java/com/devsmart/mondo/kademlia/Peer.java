@@ -7,12 +7,20 @@ import java.net.InetSocketAddress;
 
 public class Peer {
 
+    public enum Status {
+        Alive,
+        Dieing,
+        Dead
+    }
+
     private InetSocketAddress mAddress;
     public final ID id;
+    private long mFirstSeen;
     private long mLastSeen;
 
     public Peer(ID id) {
         this.id = id;
+        mFirstSeen = System.nanoTime();
     }
 
     public void markSeen() {
@@ -22,6 +30,22 @@ public class Peer {
     public long getLastSeenMillisec() {
         long retval = System.nanoTime() - mLastSeen;
         return retval / 1000000;
+    }
+
+    public long getAge() {
+        long retval = System.nanoTime() - mFirstSeen;
+        return retval / 1000000;
+    }
+
+    public Status getStatus() {
+        final long lastSeen = getLastSeenMillisec();
+        if(lastSeen < 5000) {
+            return Status.Alive;
+        } else if(lastSeen < 10000) {
+            return Status.Dieing;
+        } else {
+            return Status.Dead;
+        }
     }
 
     @Override
