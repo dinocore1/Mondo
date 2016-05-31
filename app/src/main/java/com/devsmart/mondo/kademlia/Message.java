@@ -92,10 +92,6 @@ public class Message {
             return new ID(msg.mRawData, 1);
         }
 
-        public static void setId(Message msg, ID id) {
-            id.write(msg.mRawData, 1);
-        }
-
         public static InetSocketAddress getAddress(Message msg) {
             try {
                 final int offset = 1 + ID.NUM_BYTES;
@@ -113,19 +109,28 @@ public class Message {
             }
         }
 
-        public static void setAddress(Message msg, InetSocketAddress socketAddress) {
+        public static void format(Message msg, ID id) {
+            msg.mRawData[0] = PING;
+            id.write(msg.mRawData, 1);
+            msg.mPacket.setData(msg.mRawData, 0, 1 + ID.NUM_BYTES);
+        }
+    }
+
+    public static class PongMessage {
+
+        public static void formatPong(Message msg, ID id, InetSocketAddress socketAddress) {
+            msg.mRawData[0] = PING | FLAG_RESPONSE;
+
+            id.write(msg.mRawData, 1);
+
             final int offset = 1 + ID.NUM_BYTES;
             byte[] addressData = socketAddress.getAddress().getAddress();
             System.arraycopy(addressData, 0, msg.mRawData, offset, 4);
 
             final int port = socketAddress.getPort();
-
             msg.mRawData[offset + 4] = (byte) (0xFF & port);
             msg.mRawData[offset + 5] = (byte) (0xFF & (port >>> 8));
-        }
 
-        public static void formatPong(Message msg) {
-            msg.mRawData[0] = PING | FLAG_RESPONSE;
             msg.mPacket.setData(msg.mRawData, 0, 1 + ID.NUM_BYTES + 6);
         }
     }

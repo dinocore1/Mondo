@@ -3,7 +3,11 @@ package com.devsmart.mondo.kademlia;
 
 import com.google.common.io.BaseEncoding;
 
+import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
+import java.util.concurrent.Future;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 public class Peer {
 
@@ -17,6 +21,8 @@ public class Peer {
     private InetSocketAddress mSocketAddress;
     private long mFirstSeen;
     private long mLastSeen;
+    private Future<?> mKeepAliveTask;
+
 
     public Peer(ID id) {
         this.id = id;
@@ -62,11 +68,26 @@ public class Peer {
         }
     }
 
+    public void startKeepAlive(ScheduledExecutorService executorService, ID localId, DatagramSocket socket) {
+        if(mKeepAliveTask != null) {
+            KeepAliveTask task = new KeepAliveTask(this, localId, socket);
+            mKeepAliveTask = executorService.scheduleWithFixedDelay(task, 1, 1, TimeUnit.SECONDS);
+        }
+    }
+
+    public void stopKeepAlive() {
+        if(mKeepAliveTask != null) {
+            mKeepAliveTask.cancel(false);
+            mKeepAliveTask = null;
+        }
+    }
+
     @Override
     public String toString() {
-        return String.format("%s:%s",
+        return String.format("%s:%s %s",
                 id.toString(BaseEncoding.base64Url()).substring(0, 6),
-                mSocketAddress
+                mSocketAddress,
+                getStatus().name()
         );
     }
 }

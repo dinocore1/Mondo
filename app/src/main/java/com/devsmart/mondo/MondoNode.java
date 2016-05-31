@@ -3,9 +3,11 @@ package com.devsmart.mondo;
 
 import com.devsmart.mondo.kademlia.*;
 import com.google.common.base.Throwables;
+import com.google.common.collect.Iterables;
 import com.google.common.io.BaseEncoding;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import org.apache.commons.cli.*;
 import org.apache.commons.pool2.BasePooledObjectFactory;
 import org.apache.commons.pool2.ObjectPool;
 import org.apache.commons.pool2.PooledObject;
@@ -213,20 +215,43 @@ public class MondoNode {
 
     private void handlePing(Message msg) {
 
-            ID remoteId = Message.PingMessage.getId(msg);
-            Peer remotePeer = mRoutingTable.addPeer(remoteId);
-            remotePeer.setSocketAddress(msg.getRemoteSocketAddress());
-            remotePeer.markSeen();
+        ID remoteId = Message.PingMessage.getId(msg);
+        Peer remotePeer = mRoutingTable.addPeer(remoteId);
+        remotePeer.setSocketAddress(msg.getRemoteSocketAddress());
+        remotePeer.markSeen();
 
-            if (msg.isResponse()) {
-                logger.trace("PONG from {}", remotePeer);
+        if (msg.isResponse()) {
+            logger.debug("PONG from {}", remotePeer);
 
-            } else {
-                logger.trace("PING from {}", remotePeer);
-                //send pong
-                sendPong(msg.getRemoteSocketAddress());
+        } else {
+            logger.debug("PING from {}", remotePeer);
+            //send pong
+            sendPong(msg.getRemoteSocketAddress());
+        }
+
+        if(isInteresting(remotePeer)){
+            remotePeer.startKeepAlive(mTaskExecutors, mLocalId, mDatagramSocket);
+        }
+
+    }
+
+    /**
+     * return true if this node decides this peer is "interesting". Where
+     * "interesting" is loosely defined as this peer should be keep alive
+     * because it is useful for routing.
+     * @param peer
+     * @return
+     */
+    public boolean isInteresting(Peer peer) {
+        ArrayList<Peer> bucket = mRoutingTable.getBucket(peer.id);
+        int alivePeers = 0;
+        synchronized (bucket) {
+            for(Peer p : bucket) {
+                alivePeers += p.getStatus() == Peer.Status.Alive ? 1 : 0;
             }
+        }
 
+        return alivePeers < TrimBucketTask.NUM_ALIVE_PEERS_PER_BUCKET;
     }
 
     private void handleFindPeers(Message msg) {
@@ -237,10 +262,11 @@ public class MondoNode {
         try {
             Message pongMsg = mMessagePool.borrowObject();
             try {
-                Message.PingMessage.setAddress(pongMsg, (InetSocketAddress) mDatagramSocket.getLocalSocketAddress());
-                Message.PingMessage.setId(pongMsg, mLocalId);
-                Message.PingMessage.formatPong(pongMsg);
+                Message.PongMessage.formatPong(pongMsg,
+                        mLocalId,
+                        (InetSocketAddress) mDatagramSocket.getLocalSocketAddress());
 
+                pongMsg.mPacket.setSocketAddress(socketAddress);
                 mDatagramSocket.send(pongMsg.mPacket);
 
             } finally {
@@ -269,16 +295,45 @@ public class MondoNode {
     }
 
     public static void main(String[] args) {
-        String userHome = System.getProperty("user.home");
-        File rootDir = new File(userHome, ".mondo");
-        localInstance = new MondoNode(rootDir);
+
+        Options options = new Options();
+
+        options.addOption(Option.builder("d")
+                .hasArg()
+                .argName("data dir")
+                .desc("the directory where data is stored for this node")
+                .build());
+
+        CommandLineParser parser = new DefaultParser();
         try {
+            CommandLine line = parser.parse(options, args);
+
+            File rootDir;
+            if(line.hasOption("d")) {
+                rootDir = new File(line.getOptionValue("d"));
+            } else {
+                String userHome = System.getProperty("user.home");
+                rootDir = new File(userHome, ".mondo");
+            }
+
+            localInstance = new MondoNode(rootDir);
+
             localInstance.start();
             localInstance.waitForExit();
 
+
+        } catch (ParseException e) {
+            System.err.println("cmd line parse failed: " + e.getMessage());
+
+            HelpFormatter formatter = new HelpFormatter();
+            formatter.printHelp("app", options);
+
+            System.exit(-1);
         } catch (Exception e) {
             logger.error("", e);
             System.exit(-1);
         }
+
+
     }
 }
