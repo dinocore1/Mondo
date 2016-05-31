@@ -2,13 +2,9 @@ package com.devsmart.mondo.kademlia;
 
 
 import com.google.common.io.BaseEncoding;
-import com.google.common.primitives.UnsignedBytes;
-import com.google.common.primitives.UnsignedInts;
 
 import java.math.BigInteger;
 import java.util.Arrays;
-
-import static com.google.common.base.Preconditions.checkArgument;
 
 public class ID {
     public static final int NUM_BYTES = 20;
@@ -22,6 +18,10 @@ public class ID {
 
     public ID(byte[] buf, int offset) {
         System.arraycopy(buf, offset, mData, 0, NUM_BYTES);
+    }
+
+    public void write(byte[] buf, int offset) {
+        System.arraycopy(mData, 0, buf, offset, NUM_BYTES);
     }
 
     /**

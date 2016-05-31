@@ -13,14 +13,28 @@ public class Peer {
         Dead
     }
 
-    private InetSocketAddress mAddress;
     public final ID id;
+    private InetSocketAddress mSocketAddress;
     private long mFirstSeen;
     private long mLastSeen;
 
     public Peer(ID id) {
         this.id = id;
         mFirstSeen = System.nanoTime();
+    }
+
+    public Peer(ID id, InetSocketAddress socketAddress) {
+        this.id = id;
+        this.mSocketAddress = socketAddress;
+        mFirstSeen = System.nanoTime();
+    }
+
+    public void setSocketAddress(InetSocketAddress socketAddress) {
+        mSocketAddress = socketAddress;
+    }
+
+    public InetSocketAddress getInetSocketAddress() {
+        return mSocketAddress;
     }
 
     public void markSeen() {
@@ -52,7 +66,7 @@ public class Peer {
     public String toString() {
         return String.format("%s:%s",
                 id.toString(BaseEncoding.base64Url()).substring(0, 6),
-                mAddress
+                mSocketAddress
         );
     }
 }

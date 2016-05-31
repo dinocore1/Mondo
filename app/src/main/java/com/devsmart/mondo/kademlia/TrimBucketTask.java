@@ -2,6 +2,8 @@ package com.devsmart.mondo.kademlia;
 
 
 import com.google.common.collect.ComparisonChain;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -9,6 +11,8 @@ import java.util.Comparator;
 import java.util.Iterator;
 
 public class TrimBucketTask implements Runnable {
+
+    private static final Logger logger = LoggerFactory.getLogger(TrimBucketTask.class);
 
     private static final int NUM_PEERS_PER_BUCKET = 8;
 
@@ -37,12 +41,14 @@ public class TrimBucketTask implements Runnable {
 
     @Override
     public void run() {
+        logger.debug("pruning peers...");
         for(ArrayList<Peer> bucket : mRoutingTable.mPeers) {
             synchronized (bucket) {
                 Collections.sort(bucket, COMPARATOR);
 
                 Iterator<Peer> it = bucket.iterator();
                 while(it.hasNext() && bucket.size() > NUM_PEERS_PER_BUCKET) {
+                    logger.debug("deleting peer: {}", it.next());
                     it.remove();
                 }
 

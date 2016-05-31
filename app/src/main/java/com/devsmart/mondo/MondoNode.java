@@ -1,8 +1,7 @@
 package com.devsmart.mondo;
 
 
-import com.devsmart.mondo.kademlia.ID;
-import com.devsmart.mondo.kademlia.Message;
+import com.devsmart.mondo.kademlia.*;
 import com.google.common.base.Throwables;
 import com.google.common.io.BaseEncoding;
 import com.google.gson.Gson;
@@ -21,7 +20,10 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
+import java.net.SocketTimeoutException;
+import java.util.ArrayList;
 import java.util.Random;
+import java.util.concurrent.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -36,8 +38,22 @@ public class MondoNode {
     private File mConfigFile;
     private ConfigFile mConfig;
     private ID mLocalId;
+    private RoutingTable mRoutingTable;
     private DatagramSocket mDatagramSocket;
     private Thread mSocketReader;
+    private ScheduledExecutorService mTaskExecutors = Executors.newScheduledThreadPool(3, new ThreadFactory() {
+
+        int mTreadNum = 0;
+
+        @Override
+        public Thread newThread(Runnable r) {
+            return new Thread(r, String.format("%s %s Task %d",
+                    mLocalId.toString().substring(0, 6),
+                    mDatagramSocket.getLocalSocketAddress(),
+                    mTreadNum++));
+        }
+    });
+    private boolean mRunning;
     private ObjectPool<Message> mMessagePool = new GenericObjectPool<Message>(new BasePooledObjectFactory<Message>() {
         @Override
         public Message create() throws Exception {
@@ -49,6 +65,8 @@ public class MondoNode {
             return new DefaultPooledObject<Message>(obj);
         }
     });
+    private ScheduledFuture<?> mTrimBucketTask;
+    private ScheduledFuture<?> mFindPeersTask;
 
 
     private static class ConfigFile {
@@ -61,20 +79,53 @@ public class MondoNode {
         mRootDir = configDir;
     }
 
-    private void start() throws Exception {
+    public ID getLocalId() {
+        return mLocalId;
+    }
+
+    public RoutingTable getRoutingTable() {
+        return mRoutingTable;
+    }
+
+    public void start() throws Exception {
         initLocalConfig();
         logger.info("Local id: {}", mLocalId.toString(BaseEncoding.base64Url()));
         logger.info("listening on: {}", mDatagramSocket.getLocalSocketAddress());
 
+        mRunning = true;
         mSocketReader = new Thread(mReadSocketTask,
                 String.format("%s %s Socket Reader",
                         mLocalId.toString().substring(0, 6),
                         mDatagramSocket.getLocalSocketAddress()));
+        mSocketReader.start();
 
+
+        mTrimBucketTask = mTaskExecutors.scheduleWithFixedDelay(new TrimBucketTask(mRoutingTable), 60, 30, TimeUnit.SECONDS);
+
+        ArrayList<InetSocketAddress> bootstrapAddresses = new ArrayList<InetSocketAddress>();
+        if(mConfig.bootstrap != null) {
+            for (String bootstrapStr : mConfig.bootstrap) {
+                Matcher m = INETADDRESS_REGEX.matcher(bootstrapStr);
+                if (m.find()) {
+                    String host = m.group(1);
+                    int port = Integer.parseInt(m.group(2));
+                    bootstrapAddresses.add(new InetSocketAddress(host, port));
+                }
+            }
+        }
+
+        mFindPeersTask = mTaskExecutors.scheduleWithFixedDelay(new FindPeersTask(this, bootstrapAddresses), 5, 30, TimeUnit.SECONDS);
     }
 
-    private void stop() {
+    public void stop() {
+        mFindPeersTask.cancel(false);
+        mTrimBucketTask.cancel(false);
+        mTaskExecutors.shutdown();
         mDatagramSocket.close();
+    }
+
+    public void waitForExit() throws InterruptedException {
+        mSocketReader.join();
     }
 
     private void initLocalConfig() throws IOException {
@@ -106,6 +157,7 @@ public class MondoNode {
         }
 
         mLocalId = ID.fromBase64String(mConfig.id);
+        mRoutingTable = new RoutingTable(mLocalId);
 
 
         if(mConfig.localAddress != null) {
@@ -127,14 +179,29 @@ public class MondoNode {
         @Override
         public void run() {
             try {
-                Message msg = mMessagePool.borrowObject();
-                mDatagramSocket.receive(msg.mPacket);
-                msg.parseData();
 
-                switch(msg.getType()) {
-                    case Message.PING:
-                        handlePing(msg);
-                        break;
+                mDatagramSocket.setSoTimeout(500);
+
+                while(mRunning) {
+                    Message msg = mMessagePool.borrowObject();
+                    try {
+                        msg.prepareReceive();
+                        mDatagramSocket.receive(msg.mPacket);
+                        msg.parseData();
+
+                        switch (msg.getType()) {
+                            case Message.PING:
+                                handlePing(msg);
+                                break;
+
+                            case Message.FINDPEERS:
+                                handleFindPeers(msg);
+                                break;
+                        }
+                    } catch (SocketTimeoutException e) {
+                    } finally {
+                        mMessagePool.returnObject(msg);
+                    }
                 }
 
 
@@ -146,7 +213,59 @@ public class MondoNode {
 
     private void handlePing(Message msg) {
 
+            ID remoteId = Message.PingMessage.getId(msg);
+            Peer remotePeer = mRoutingTable.addPeer(remoteId);
+            remotePeer.setSocketAddress(msg.getRemoteSocketAddress());
+            remotePeer.markSeen();
 
+            if (msg.isResponse()) {
+                logger.trace("PONG from {}", remotePeer);
+
+            } else {
+                logger.trace("PING from {}", remotePeer);
+                //send pong
+                sendPong(msg.getRemoteSocketAddress());
+            }
+
+    }
+
+    private void handleFindPeers(Message msg) {
+
+    }
+
+    public void sendPong(InetSocketAddress socketAddress) {
+        try {
+            Message pongMsg = mMessagePool.borrowObject();
+            try {
+                Message.PingMessage.setAddress(pongMsg, (InetSocketAddress) mDatagramSocket.getLocalSocketAddress());
+                Message.PingMessage.setId(pongMsg, mLocalId);
+                Message.PingMessage.formatPong(pongMsg);
+
+                mDatagramSocket.send(pongMsg.mPacket);
+
+            } finally {
+                mMessagePool.returnObject(pongMsg);
+            }
+        } catch (Exception e) {
+            logger.error("", e);
+        }
+    }
+
+    public void sendFindPeers(InetSocketAddress inetSocketAddress) {
+        try {
+            Message msg = mMessagePool.borrowObject();
+            try {
+
+                msg.mPacket.setSocketAddress(inetSocketAddress);
+
+
+                mDatagramSocket.send(msg.mPacket);
+            } finally {
+                mMessagePool.returnObject(msg);
+            }
+        } catch (Exception e) {
+            logger.error("", e);
+        }
     }
 
     public static void main(String[] args) {
@@ -155,8 +274,11 @@ public class MondoNode {
         localInstance = new MondoNode(rootDir);
         try {
             localInstance.start();
+            localInstance.waitForExit();
+
         } catch (Exception e) {
             logger.error("", e);
+            System.exit(-1);
         }
     }
 }

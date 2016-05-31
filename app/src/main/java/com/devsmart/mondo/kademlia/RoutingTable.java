@@ -1,10 +1,10 @@
 package com.devsmart.mondo.kademlia;
 
 
-import java.lang.reflect.Array;
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.Collection;
 import java.util.Comparator;
+import java.util.LinkedList;
 
 public class RoutingTable {
 
@@ -49,17 +49,25 @@ public class RoutingTable {
         return null;
     }
 
-    public void addPeer(Peer peer) {
-        ArrayList<Peer> bucket = getBucket(peer.id);
+    public Peer addPeer(ID id) {
+        ArrayList<Peer> bucket = getBucket(id);
 
         synchronized (bucket) {
             for (Peer p : bucket) {
-                if (p.id.equals(peer.id)) {
-                    return;
+                if (p.id.equals(id)) {
+                    return p;
                 }
             }
 
-            bucket.add(peer);
+            Peer p = new Peer(id);
+            bucket.add(p);
+            return p;
+        }
+    }
+
+    public void getAllPeers(Collection<Peer> peerList) {
+        for(int i=0;i<ID.NUM_BYTES*8;i++){
+            peerList.addAll(mPeers[i]);
         }
     }
 }
