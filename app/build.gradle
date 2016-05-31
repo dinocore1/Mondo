@@ -1,6 +1,40 @@
 apply plugin: 'java'
 
+buildscript {
+  repositories {
+    mavenCentral()
+  }
+  dependencies {
+    classpath 'net.sf.proguard:proguard-gradle:5.2.1'
+  }
+}
 
+group = 'com.devsmart'
+version = '0.0.1'
+
+jar {
+  manifest {
+    attributes 'Implementation-Title': 'Mondo',
+            'Implementation-Version': version,
+            'Main-Class': 'com.devsmart.mondo.MondoNode'
+  }
+
+  baseName = 'Mondo'
+  from {
+    configurations.compile.collect {
+      it.isDirectory() ? it : zipTree(it)
+    }
+  }
+
+}
+
+task proguard(type: proguard.gradle.ProGuardTask) {
+  configuration 'proguard.txt'
+
+  injars jar.outputs
+  outjars 'build/libs/mondo-proguard.jar'
+  libraryjars "${System.getProperty('java.home')}/lib/rt.jar"
+}
 
 dependencies {
   compile 'com.dev-smart:ubjson:0.1.3'

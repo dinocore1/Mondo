@@ -137,5 +137,12 @@ public class Message {
 
     public static class FindPeersMessage {
 
+        public static void format(Message msg, ID targetId) {
+            msg.mRawData[0] = FINDPEERS;
+
+            targetId.write(msg.mRawData, 1);
+
+            msg.mPacket.setData(msg.mRawData, 0, 1 + ID.NUM_BYTES);
+        }
     }
 }

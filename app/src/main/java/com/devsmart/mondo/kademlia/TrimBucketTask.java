@@ -48,6 +48,7 @@ public class TrimBucketTask implements Runnable {
     @Override
     public void run() {
         logger.debug("pruning peers...");
+        int numPrunedPeers = 0;
         for(ArrayList<Peer> bucket : mRoutingTable.mPeers) {
             synchronized (bucket) {
                 Collections.sort(bucket, COMPARATOR);
@@ -57,9 +58,11 @@ public class TrimBucketTask implements Runnable {
                     final Peer peer = it.next();
                     killPeer(peer);
                     it.remove();
+                    numPrunedPeers++;
                 }
 
             }
         }
+        logger.debug("pruned {} peers", numPrunedPeers);
     }
 }

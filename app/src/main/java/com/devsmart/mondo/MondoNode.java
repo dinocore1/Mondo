@@ -235,6 +235,21 @@ public class MondoNode {
 
     }
 
+    private void handleFindPeers(Message msg) {
+
+        ID remoteId = Message.PingMessage.getId(msg);
+        Peer remotePeer = mRoutingTable.addPeer(remoteId);
+        remotePeer.setSocketAddress(msg.getRemoteSocketAddress());
+        remotePeer.markSeen();
+
+        logger.debug("FINDPEERS from {}", remotePeer);
+
+        if(isInteresting(remotePeer)){
+            remotePeer.startKeepAlive(mTaskExecutors, mLocalId, mDatagramSocket);
+        }
+
+    }
+
     /**
      * return true if this node decides this peer is "interesting". Where
      * "interesting" is loosely defined as this peer should be keep alive
@@ -252,10 +267,6 @@ public class MondoNode {
         }
 
         return alivePeers < TrimBucketTask.NUM_ALIVE_PEERS_PER_BUCKET;
-    }
-
-    private void handleFindPeers(Message msg) {
-
     }
 
     public void sendPong(InetSocketAddress socketAddress) {
@@ -277,14 +288,13 @@ public class MondoNode {
         }
     }
 
-    public void sendFindPeers(InetSocketAddress inetSocketAddress) {
+    public void sendFindPeers(InetSocketAddress inetSocketAddress, ID targetId) {
         try {
             Message msg = mMessagePool.borrowObject();
             try {
 
+                Message.FindPeersMessage.format(msg, targetId);
                 msg.mPacket.setSocketAddress(inetSocketAddress);
-
-
                 mDatagramSocket.send(msg.mPacket);
             } finally {
                 mMessagePool.returnObject(msg);

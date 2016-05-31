@@ -1,0 +1,25 @@
+
+-dontobfuscate
+
+-dontwarn javax.**
+-dontwarn org.codehaus.groovy.**
+-dontwarn org.codehaus.janino.**
+-dontwarn org.codehaus.commons.**
+-dontwarn org.codehaus.mojo.**
+-dontwarn org.slf4j.**
+-dontwarn groovy.lang.**
+-dontwarn com.google.j2objc.annotations.Weak
+-dontwarn net.sf.cglib.proxy.**
+
+-keep class ch.qos.logback.** { *; }
+-keep class org.slf4j.** { *; }
+
+-keep class org.apache.commons.** { *; }
+
+-keep class com.devsmart.mondo.** {
+ *;
+}
+
+-keep class com.devsmart.mondo.MondoNode {
+ public static void main(java.lang.String[]);
+}

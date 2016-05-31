@@ -59,9 +59,9 @@ public class Peer {
 
     public Status getStatus() {
         final long lastSeen = getLastSeenMillisec();
-        if(lastSeen < 5000) {
+        if(lastSeen < 10000) {
             return Status.Alive;
-        } else if(lastSeen < 10000) {
+        } else if(lastSeen < 30000) {
             return Status.Dieing;
         } else {
             return Status.Dead;
@@ -69,9 +69,9 @@ public class Peer {
     }
 
     public void startKeepAlive(ScheduledExecutorService executorService, ID localId, DatagramSocket socket) {
-        if(mKeepAliveTask != null) {
+        if(mKeepAliveTask == null) {
             KeepAliveTask task = new KeepAliveTask(this, localId, socket);
-            mKeepAliveTask = executorService.scheduleWithFixedDelay(task, 1, 1, TimeUnit.SECONDS);
+            mKeepAliveTask = executorService.scheduleWithFixedDelay(task, 1, 5, TimeUnit.SECONDS);
         }
     }
 

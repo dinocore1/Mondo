@@ -58,7 +58,7 @@ public class FindPeersTask implements Runnable {
                 } else {
                     for (InetSocketAddress bootstrapAddress : mBootstrapNodes) {
                         logger.debug("asking {} for new peers", bootstrapAddress);
-                        mNode.sendFindPeers(bootstrapAddress);
+                        mNode.sendFindPeers(bootstrapAddress, mNode.getLocalId());
                         Thread.sleep(500);
                     }
                 }
@@ -69,7 +69,7 @@ public class FindPeersTask implements Runnable {
                 while(it.hasNext()) {
                     Peer peer = it.next();
                     logger.debug("asking {} for new peers", peer);
-                    mNode.sendFindPeers(peer.getInetSocketAddress());
+                    mNode.sendFindPeers(peer.getInetSocketAddress(), mNode.getLocalId());
                     Thread.sleep(500);
                     numRequestsSent++;
                     if(numRequestsSent > MIN_NUM_PEERS) {
