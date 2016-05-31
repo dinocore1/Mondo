@@ -216,8 +216,7 @@ public class MondoNode {
     private void handlePing(Message msg) {
 
         ID remoteId = Message.PingMessage.getId(msg);
-        Peer remotePeer = mRoutingTable.addPeer(remoteId);
-        remotePeer.setSocketAddress(msg.getRemoteSocketAddress());
+        Peer remotePeer = mRoutingTable.getPeer(remoteId, msg.getRemoteSocketAddress());
         remotePeer.markSeen();
 
         if (msg.isResponse()) {
@@ -230,6 +229,7 @@ public class MondoNode {
         }
 
         if(isInteresting(remotePeer)){
+            mRoutingTable.addPeer(remotePeer);
             remotePeer.startKeepAlive(mTaskExecutors, mLocalId, mDatagramSocket);
         }
 
@@ -238,13 +238,13 @@ public class MondoNode {
     private void handleFindPeers(Message msg) {
 
         ID remoteId = Message.PingMessage.getId(msg);
-        Peer remotePeer = mRoutingTable.addPeer(remoteId);
-        remotePeer.setSocketAddress(msg.getRemoteSocketAddress());
+        Peer remotePeer = mRoutingTable.getPeer(remoteId, msg.getRemoteSocketAddress());
         remotePeer.markSeen();
 
         logger.debug("FINDPEERS from {}", remotePeer);
 
         if(isInteresting(remotePeer)){
+            mRoutingTable.addPeer(remotePeer);
             remotePeer.startKeepAlive(mTaskExecutors, mLocalId, mDatagramSocket);
         }
 
@@ -259,9 +259,15 @@ public class MondoNode {
      */
     public boolean isInteresting(Peer peer) {
         ArrayList<Peer> bucket = mRoutingTable.getBucket(peer.id);
+        if(bucket.contains(peer)) {
+            return false;
+        }
+
+
         int alivePeers = 0;
         synchronized (bucket) {
             for(Peer p : bucket) {
+
                 alivePeers += p.getStatus() == Peer.Status.Alive ? 1 : 0;
             }
         }

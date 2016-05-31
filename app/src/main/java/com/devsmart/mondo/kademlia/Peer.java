@@ -11,6 +11,9 @@ import java.util.concurrent.TimeUnit;
 
 public class Peer {
 
+    private static final int TIME_DIEING = 15 * 1000;
+    private static final int TIME_DEAD = 60 * 1000;
+
     public enum Status {
         Alive,
         Dieing,
@@ -23,20 +26,11 @@ public class Peer {
     private long mLastSeen;
     private Future<?> mKeepAliveTask;
 
-
-    public Peer(ID id) {
-        this.id = id;
-        mFirstSeen = System.nanoTime();
-    }
-
     public Peer(ID id, InetSocketAddress socketAddress) {
         this.id = id;
         this.mSocketAddress = socketAddress;
         mFirstSeen = System.nanoTime();
-    }
-
-    public void setSocketAddress(InetSocketAddress socketAddress) {
-        mSocketAddress = socketAddress;
+        mLastSeen = mFirstSeen;
     }
 
     public InetSocketAddress getInetSocketAddress() {
@@ -59,9 +53,9 @@ public class Peer {
 
     public Status getStatus() {
         final long lastSeen = getLastSeenMillisec();
-        if(lastSeen < 10000) {
+        if(lastSeen < TIME_DIEING) {
             return Status.Alive;
-        } else if(lastSeen < 30000) {
+        } else if(lastSeen < TIME_DEAD) {
             return Status.Dieing;
         } else {
             return Status.Dead;
@@ -80,6 +74,22 @@ public class Peer {
             mKeepAliveTask.cancel(false);
             mKeepAliveTask = null;
         }
+    }
+
+    @Override
+    public int hashCode() {
+        int retval = id.hashCode() ^ mSocketAddress.hashCode();
+        return retval;
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        boolean retval = false;
+        if(obj instanceof Peer) {
+            Peer o = (Peer)obj;
+            retval = id.equals(o.id) && mSocketAddress.equals(o.mSocketAddress);
+        }
+        return retval;
     }
 
     @Override

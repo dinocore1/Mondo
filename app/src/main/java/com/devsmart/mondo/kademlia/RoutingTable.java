@@ -1,6 +1,7 @@
 package com.devsmart.mondo.kademlia;
 
 
+import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -35,33 +36,26 @@ public class RoutingTable {
         return bucket;
     }
 
-    public Peer getPeer(ID id) {
+    public Peer getPeer(ID id, InetSocketAddress socketAddress) {
         ArrayList<Peer> bucket = getBucket(id);
+        Peer retval = new Peer(id, socketAddress);
 
         synchronized (bucket) {
             for (Peer p : bucket) {
-                if (p.id.equals(id)) {
-                    return p;
+                if (p.equals(retval)) {
+                    retval = p;
+                    break;
                 }
             }
         }
 
-        return null;
+        return retval;
     }
 
-    public Peer addPeer(ID id) {
-        ArrayList<Peer> bucket = getBucket(id);
-
+    public void addPeer(Peer peer) {
+        ArrayList<Peer> bucket = getBucket(peer.id);
         synchronized (bucket) {
-            for (Peer p : bucket) {
-                if (p.id.equals(id)) {
-                    return p;
-                }
-            }
-
-            Peer p = new Peer(id);
-            bucket.add(p);
-            return p;
+            bucket.add(peer);
         }
     }
 

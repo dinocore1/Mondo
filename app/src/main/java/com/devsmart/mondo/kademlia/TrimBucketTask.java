@@ -15,7 +15,7 @@ public class TrimBucketTask implements Runnable {
     private static final Logger logger = LoggerFactory.getLogger(TrimBucketTask.class);
 
     public static final int NUM_PEERS_PER_BUCKET = 8;
-    public static final int NUM_ALIVE_PEERS_PER_BUCKET = 6;
+    public static final int NUM_ALIVE_PEERS_PER_BUCKET = 3;
 
 
     static final Comparator<Peer> COMPARATOR = new Comparator<Peer>() {
@@ -54,11 +54,14 @@ public class TrimBucketTask implements Runnable {
                 Collections.sort(bucket, COMPARATOR);
 
                 Iterator<Peer> it = bucket.iterator();
-                while(it.hasNext() && bucket.size() > NUM_PEERS_PER_BUCKET) {
+                while(it.hasNext()) {
                     final Peer peer = it.next();
-                    killPeer(peer);
-                    it.remove();
-                    numPrunedPeers++;
+                    if(bucket.size() > NUM_PEERS_PER_BUCKET
+                            || peer.getStatus() == Peer.Status.Dead) {
+                        killPeer(peer);
+                        it.remove();
+                        numPrunedPeers++;
+                    }
                 }
 
             }
