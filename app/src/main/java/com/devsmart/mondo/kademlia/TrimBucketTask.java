@@ -25,7 +25,7 @@ public class TrimBucketTask implements Runnable {
             final Peer.Status statusB = b.getStatus();
             int result = ComparisonChain.start()
                     .compareTrueFirst(statusA == Peer.Status.Dead, statusB == Peer.Status.Dead)
-                    .compareTrueFirst(statusA == Peer.Status.Dieing, statusB == Peer.Status.Dieing)
+                    .compareTrueFirst(statusA == Peer.Status.Dying, statusB == Peer.Status.Dying)
                     .compare(a.getAge(), b.getAge())
                     .result();
 

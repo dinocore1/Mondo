@@ -16,7 +16,7 @@ public class Peer {
 
     public enum Status {
         Alive,
-        Dieing,
+        Dying,
         Dead
     }
 
@@ -56,7 +56,7 @@ public class Peer {
         if(lastSeen < TIME_DIEING) {
             return Status.Alive;
         } else if(lastSeen < TIME_DEAD) {
-            return Status.Dieing;
+            return Status.Dying;
         } else {
             return Status.Dead;
         }
