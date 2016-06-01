@@ -3,7 +3,6 @@ package com.devsmart.mondo;
 
 import com.devsmart.mondo.kademlia.*;
 import com.google.common.base.Throwables;
-import com.google.common.collect.Iterables;
 import com.google.common.io.BaseEncoding;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -243,6 +242,13 @@ public class MondoNode {
 
         logger.debug("FINDPEERS from {}", remotePeer);
 
+        if (msg.isResponse()) {
+
+        } else {
+            ID target = Message.FindPeersMessage.getTargetId();
+
+        }
+
         if(isInteresting(remotePeer)){
             mRoutingTable.addPeer(remotePeer);
             remotePeer.startKeepAlive(mTaskExecutors, mLocalId, mDatagramSocket);
@@ -299,7 +305,7 @@ public class MondoNode {
             Message msg = mMessagePool.borrowObject();
             try {
 
-                Message.FindPeersMessage.format(msg, targetId);
+                Message.FindPeersMessage.formatRequest(msg, targetId);
                 msg.mPacket.setSocketAddress(inetSocketAddress);
                 mDatagramSocket.send(msg.mPacket);
             } finally {

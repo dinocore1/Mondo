@@ -23,10 +23,15 @@ public class Message {
         R: (Response): 1bit
         PT (Payload Type): 3bits
 
-                 0
-        +---------------+--------+-------+-------+--------+--------+--------+
-        | V | X |R|PT
+         0 1 2 3 4 5 6 7 8
+        +-+-+-+-+-+-+-+-+-
+        |Ver|   |R| PT  |
 
+
+        # SocketAddress #
+          0   1   2   3   4   5
+        +------------------------+
+        | IPv4 Addr.    | Port   |
 
         ID: 20-byte value
         SocketAddress: 4-byte address, 2 byte port
@@ -50,6 +55,7 @@ public class Message {
         ID
 
         Response Payload:
+
         {ID, SocketAddress}[]
 
         ### Connect ###
@@ -137,12 +143,20 @@ public class Message {
 
     public static class FindPeersMessage {
 
-        public static void format(Message msg, ID targetId) {
+        public static void formatRequest(Message msg, ID targetId) {
             msg.mRawData[0] = FINDPEERS;
 
             targetId.write(msg.mRawData, 1);
 
             msg.mPacket.setData(msg.mRawData, 0, 1 + ID.NUM_BYTES);
+        }
+
+        public static void formatResponse(Message msg) {
+            msg.mRawData[0] = FINDPEERS | FLAG_RESPONSE;
+        }
+
+        public static ID getTargetId(Message msg) {
+            return new ID(msg.mRawData, 1);
         }
     }
 }
