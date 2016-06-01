@@ -1,0 +1,7 @@
+# Mondo #
+
+Mondo is a free and free and open-source p2p file storage network. By running a Mondo node on your computer,
+you donate some of your harddrive's storage space in exchange for redundant backup and accessibility from anywhere.
+
+
+Mondo is in early development and doesnt do anything usefull right now...
