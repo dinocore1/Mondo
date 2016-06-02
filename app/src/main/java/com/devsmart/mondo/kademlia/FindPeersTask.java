@@ -57,9 +57,13 @@ public class FindPeersTask implements Runnable {
                     logger.warn("no bootstrap nodes available");
                 } else {
                     for (InetSocketAddress bootstrapAddress : mBootstrapNodes) {
+                        logger.debug("send ping to {}", bootstrapAddress);
+                        mNode.sendPing(bootstrapAddress);
+                        Thread.sleep(250);
+
                         logger.debug("asking {} for new peers", bootstrapAddress);
                         mNode.sendFindPeers(bootstrapAddress, mNode.getLocalId());
-                        Thread.sleep(500);
+                        Thread.sleep(250);
                     }
                 }
             } else {
@@ -68,9 +72,14 @@ public class FindPeersTask implements Runnable {
                 int numRequestsSent = 0;
                 while(it.hasNext()) {
                     Peer peer = it.next();
+
+                    logger.debug("send ping to {}", peer.getInetSocketAddress());
+                    mNode.sendPing(peer.getInetSocketAddress());
+                    Thread.sleep(250);
+
                     logger.debug("asking {} for new peers", peer);
                     mNode.sendFindPeers(peer.getInetSocketAddress(), mNode.getLocalId());
-                    Thread.sleep(500);
+                    Thread.sleep(250);
                     numRequestsSent++;
                     if(numRequestsSent > MIN_NUM_PEERS) {
                         break;

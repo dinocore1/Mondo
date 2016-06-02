@@ -27,7 +27,7 @@ public class KeepAliveTask implements Runnable {
         try {
             //send ping
             logger.debug("sending PING to {}", mPeer);
-            Message.PingMessage.format(mPingMessage, mLocalId);
+            Message.PingMessage.formatRequest(mPingMessage, mLocalId);
             mPingMessage.mPacket.setSocketAddress(mPeer.getInetSocketAddress());
             mSocket.send(mPingMessage.mPacket);
         } catch (Exception e) {

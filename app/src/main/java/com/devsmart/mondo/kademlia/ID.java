@@ -20,8 +20,9 @@ public class ID {
         System.arraycopy(buf, offset, mData, 0, NUM_BYTES);
     }
 
-    public void write(byte[] buf, int offset) {
+    public int write(byte[] buf, int offset) {
         System.arraycopy(mData, 0, buf, offset, NUM_BYTES);
+        return NUM_BYTES;
     }
 
     /**

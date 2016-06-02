@@ -1,24 +1,15 @@
 package com.devsmart.mondo.kademlia;
 
 
+import com.google.common.collect.ComparisonChain;
+
 import java.net.InetSocketAddress;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Comparator;
-import java.util.LinkedList;
+import java.util.*;
 
 public class RoutingTable {
 
     private final ID mLocalNode;
-    private final DistanceComparator mDistanceComparator;
     ArrayList<Peer>[] mPeers;
-
-    private class DistanceComparator implements Comparator<Peer> {
-        @Override
-        public int compare(Peer a, Peer b) {
-            return ID.compareDistance(a.id, b.id, mLocalNode);
-        }
-    }
 
     @SuppressWarnings("unchecked")
     public RoutingTable(ID localId) {
@@ -27,13 +18,33 @@ public class RoutingTable {
         for(int i=0;i<ID.NUM_BYTES*8;i++) {
             mPeers[i] = new ArrayList<Peer>(8);
         }
-        mDistanceComparator = new DistanceComparator();
     }
 
     public ArrayList<Peer> getBucket(ID id) {
         int numBitsInCommon = id.getNumSharedPrefixBits(mLocalNode);
         ArrayList<Peer> bucket = mPeers[numBitsInCommon];
         return bucket;
+    }
+
+    public Collection<Peer> getRoutingPeers(ID target) {
+        ArrayList<Peer> retval = new ArrayList<Peer>();
+        getAllPeers(retval);
+
+        final DistanceComparator distanceComparator = new DistanceComparator(target);
+        Comparator<Peer> comparator = new Comparator<Peer>() {
+            @Override
+            public int compare(Peer a, Peer b) {
+                final Peer.Status statusA = a.getStatus();
+                final Peer.Status statusB = b.getStatus();
+
+                return ComparisonChain.start()
+                        .compareTrueFirst(statusA == Peer.Status.Alive, statusB == Peer.Status.Alive)
+                        .compare(a, b, distanceComparator)
+                        .result();
+            }
+        };
+        Collections.sort(retval, comparator);
+        return retval;
     }
 
     public Peer getPeer(ID id, InetSocketAddress socketAddress) {
@@ -53,6 +64,10 @@ public class RoutingTable {
     }
 
     public void addPeer(Peer peer) {
+        if(peer.id.equals(mLocalNode)) {
+            return;
+        }
+
         ArrayList<Peer> bucket = getBucket(peer.id);
         synchronized (bucket) {
             bucket.add(peer);

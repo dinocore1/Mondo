@@ -23,6 +23,7 @@ import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
 import java.net.SocketTimeoutException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Random;
 import java.util.concurrent.*;
 import java.util.regex.Matcher;
@@ -235,23 +236,33 @@ public class MondoNode {
     }
 
     private void handleFindPeers(Message msg) {
+        try {
 
-        ID remoteId = Message.PingMessage.getId(msg);
-        Peer remotePeer = mRoutingTable.getPeer(remoteId, msg.getRemoteSocketAddress());
-        remotePeer.markSeen();
+            logger.debug("FINDPEERS from {}", msg.mPacket.getSocketAddress());
 
-        logger.debug("FINDPEERS from {}", remotePeer);
+            if (msg.isResponse()) {
+                Collection<Peer> newPeers = Message.FindPeersMessage.getPeers(msg);
+                for (Peer p : newPeers) {
+                    mRoutingTable.addPeer(p);
+                }
 
-        if (msg.isResponse()) {
+            } else {
+                ID target = Message.FindPeersMessage.getTargetId(msg);
+                Collection<Peer> peers = mRoutingTable.getRoutingPeers(target);
 
-        } else {
-            ID target = Message.FindPeersMessage.getTargetId();
+                Message resp = mMessagePool.borrowObject();
+                try {
+                    resp.mPacket.setSocketAddress(msg.getRemoteSocketAddress());
+                    Message.FindPeersMessage.formatResponse(resp, peers);
+                    mDatagramSocket.send(resp.mPacket);
+                } finally {
+                    mMessagePool.returnObject(resp);
+                }
 
-        }
+            }
 
-        if(isInteresting(remotePeer)){
-            mRoutingTable.addPeer(remotePeer);
-            remotePeer.startKeepAlive(mTaskExecutors, mLocalId, mDatagramSocket);
+        } catch (Exception e) {
+            logger.error("", e);
         }
 
     }
@@ -281,13 +292,27 @@ public class MondoNode {
         return alivePeers < TrimBucketTask.NUM_ALIVE_PEERS_PER_BUCKET;
     }
 
-    public void sendPong(InetSocketAddress socketAddress) {
+    public void sendPing(InetSocketAddress socketAddress) {
+        try {
+            Message msg = mMessagePool.borrowObject();
+            try {
+                Message.PingMessage.formatRequest(msg, mLocalId);
+                msg.mPacket.setSocketAddress(socketAddress);
+                mDatagramSocket.send(msg.mPacket);
+
+            } finally {
+                mMessagePool.returnObject(msg);
+            }
+        } catch (Exception e) {
+            logger.error("", e);
+        }
+    }
+
+    private void sendPong(InetSocketAddress socketAddress) {
         try {
             Message pongMsg = mMessagePool.borrowObject();
             try {
-                Message.PongMessage.formatPong(pongMsg,
-                        mLocalId,
-                        (InetSocketAddress) mDatagramSocket.getLocalSocketAddress());
+                Message.PingMessage.formatResponse(pongMsg, mLocalId);
 
                 pongMsg.mPacket.setSocketAddress(socketAddress);
                 mDatagramSocket.send(pongMsg.mPacket);

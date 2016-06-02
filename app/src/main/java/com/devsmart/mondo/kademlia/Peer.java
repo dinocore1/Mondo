@@ -15,22 +15,21 @@ public class Peer {
     private static final int TIME_DEAD = 60 * 1000;
 
     public enum Status {
+        Unknown,
         Alive,
         Dying,
-        Dead
+        statusA, Dead
     }
 
     public final ID id;
     private InetSocketAddress mSocketAddress;
-    private long mFirstSeen;
-    private long mLastSeen;
+    private long mFirstSeen = -1;
+    private long mLastSeen = -1;
     private Future<?> mKeepAliveTask;
 
     public Peer(ID id, InetSocketAddress socketAddress) {
         this.id = id;
         this.mSocketAddress = socketAddress;
-        mFirstSeen = System.nanoTime();
-        mLastSeen = mFirstSeen;
     }
 
     public InetSocketAddress getInetSocketAddress() {
@@ -39,6 +38,9 @@ public class Peer {
 
     public void markSeen() {
         mLastSeen = System.nanoTime();
+        if(mFirstSeen == -1) {
+            mFirstSeen = mLastSeen;
+        }
     }
 
     public long getLastSeenMillisec() {

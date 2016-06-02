@@ -1,14 +1,14 @@
 package com.devsmart.mondo.kademlia;
 
 
-import com.devsmart.ubjson.UBReader;
-import com.devsmart.ubjson.UBValueFactory;
 import com.google.common.base.Throwables;
 
 import java.net.DatagramPacket;
-import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.UnknownHostException;
+import java.util.ArrayList;
+import java.util.Collection;
 
 public class Message {
 
@@ -68,6 +68,31 @@ public class Message {
     byte[] mRawData = new byte[64*1024];
     public final DatagramPacket mPacket = new DatagramPacket(mRawData, mRawData.length);
 
+    private static int writeIPv4AddressPort(byte[] buf, int offset, InetAddress address, int port) {
+        byte[] addressBytes = address.getAddress();
+        System.arraycopy(addressBytes, 0, buf, offset, 4);
+        buf[offset + 4] = (byte) (0xFF & port);
+        buf[offset + 5] = (byte) (0xFF & (port >>> 8));
+
+        return 6;
+    }
+
+    private static InetSocketAddress readIPv4AddressPort(byte[] buf, int offset) {
+        try {
+            byte[] addressData = new byte[4];
+            System.arraycopy(buf, offset, addressData, 0, 4);
+            InetAddress address = InetAddress.getByAddress(addressData);
+
+            int port = buf[offset + 4] & 0xFF;
+            port |= ((buf[offset + 5] << 8) & 0xFF00);
+
+            return new InetSocketAddress(address, port);
+        } catch(UnknownHostException e) {
+            Throwables.propagate(e);
+            return null;
+        }
+    }
+
     public boolean parseData() {
         return false;
     }
@@ -98,46 +123,19 @@ public class Message {
             return new ID(msg.mRawData, 1);
         }
 
-        public static InetSocketAddress getAddress(Message msg) {
-            try {
-                final int offset = 1 + ID.NUM_BYTES;
-                byte[] addressData = new byte[4];
-                System.arraycopy(msg.mRawData, offset, addressData, 0, 4);
-                InetAddress address = InetAddress.getByAddress(addressData);
-
-                int port = msg.mRawData[offset + 4] & 0xFF;
-                port |= ((msg.mRawData[offset + 5] << 8) & 0xFF00);
-
-                return new InetSocketAddress(address, port);
-            } catch (Exception e) {
-                Throwables.propagate(e);
-                return null;
-            }
-        }
-
-        public static void format(Message msg, ID id) {
+        public static void formatRequest(Message msg, ID id) {
             msg.mRawData[0] = PING;
-            id.write(msg.mRawData, 1);
-            msg.mPacket.setData(msg.mRawData, 0, 1 + ID.NUM_BYTES);
+            int offset = 1;
+            offset += id.write(msg.mRawData, 1);
+            msg.mPacket.setData(msg.mRawData, 0, offset);
         }
-    }
 
-    public static class PongMessage {
-
-        public static void formatPong(Message msg, ID id, InetSocketAddress socketAddress) {
+        public static void formatResponse(Message msg, ID id) {
             msg.mRawData[0] = PING | FLAG_RESPONSE;
 
-            id.write(msg.mRawData, 1);
-
-            final int offset = 1 + ID.NUM_BYTES;
-            byte[] addressData = socketAddress.getAddress().getAddress();
-            System.arraycopy(addressData, 0, msg.mRawData, offset, 4);
-
-            final int port = socketAddress.getPort();
-            msg.mRawData[offset + 4] = (byte) (0xFF & port);
-            msg.mRawData[offset + 5] = (byte) (0xFF & (port >>> 8));
-
-            msg.mPacket.setData(msg.mRawData, 0, 1 + ID.NUM_BYTES + 6);
+            int offset = 1;
+            offset += id.write(msg.mRawData, 1);
+            msg.mPacket.setData(msg.mRawData, 0, offset);
         }
     }
 
@@ -146,17 +144,51 @@ public class Message {
         public static void formatRequest(Message msg, ID targetId) {
             msg.mRawData[0] = FINDPEERS;
 
-            targetId.write(msg.mRawData, 1);
-
-            msg.mPacket.setData(msg.mRawData, 0, 1 + ID.NUM_BYTES);
+            int offset = 1;
+            offset += targetId.write(msg.mRawData, 1);
+            msg.mPacket.setData(msg.mRawData, 0, offset);
         }
 
-        public static void formatResponse(Message msg) {
+        public static void formatResponse(Message msg, Collection<Peer> peers) {
             msg.mRawData[0] = FINDPEERS | FLAG_RESPONSE;
+
+            int max = Math.min(8, peers.size());
+            msg.mRawData[1] = (byte) max;
+
+            int i = 0;
+
+            int offset = 2;
+            for(Peer p : peers) {
+                offset += p.id.write(msg.mRawData, offset);
+                InetSocketAddress socketAddress = p.getInetSocketAddress();
+                offset += writeIPv4AddressPort(msg.mRawData, offset, socketAddress.getAddress(), socketAddress.getPort());
+
+                if(++i >= max) {
+                    break;
+                }
+            }
+            msg.mPacket.setData(msg.mRawData, 0, offset);
         }
 
         public static ID getTargetId(Message msg) {
             return new ID(msg.mRawData, 1);
+        }
+
+        public static Collection<Peer> getPeers(Message msg) {
+            final int numPeers = 0x00ff & msg.mRawData[1];
+            ArrayList<Peer> retval = new ArrayList<Peer>(numPeers);
+
+            int offset = 2;
+            for(int i=0;i<numPeers;i++) {
+                ID id = new ID(msg.mRawData, offset);
+                offset += ID.NUM_BYTES;
+                InetSocketAddress socketAddress = readIPv4AddressPort(msg.mRawData, offset);
+                offset += 6;
+                Peer p = new Peer(id, socketAddress);
+                retval.add(p);
+            }
+
+            return retval;
         }
     }
 }
