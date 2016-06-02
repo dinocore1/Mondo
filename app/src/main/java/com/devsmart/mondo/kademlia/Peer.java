@@ -54,6 +54,9 @@ public class Peer {
     }
 
     public Status getStatus() {
+        if(mFirstSeen == -1){
+            return Status.Unknown;
+        }
         final long lastSeen = getLastSeenMillisec();
         if(lastSeen < TIME_DIEING) {
             return Status.Alive;
