@@ -22,9 +22,7 @@ import java.io.IOException;
 import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
 import java.net.SocketTimeoutException;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Random;
+import java.util.*;
 import java.util.concurrent.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -69,6 +67,7 @@ public class MondoNode {
     });
     private ScheduledFuture<?> mTrimBucketTask;
     private ScheduledFuture<?> mFindPeersTask;
+    private Consensus<InetSocketAddress> mLocalSocketAddressConsensus = new Consensus<InetSocketAddress>(InetSocketAddress.class, 5);
 
 
     private static class ConfigFile {
@@ -215,17 +214,31 @@ public class MondoNode {
 
     private void handlePing(Message msg) {
 
-        ID remoteId = Message.PingMessage.getId(msg);
-        Peer remotePeer = mRoutingTable.getPeer(remoteId, msg.getRemoteSocketAddress());
+        final ID remoteId = Message.PingMessage.getId(msg);
+        final InetSocketAddress remoteAddress = msg.getRemoteSocketAddress();
+        Peer remotePeer = mRoutingTable.getPeer(remoteId, remoteAddress);
         remotePeer.markSeen();
 
         if (msg.isResponse()) {
             logger.debug("PONG from {}", remotePeer);
+            mLocalSocketAddressConsensus.vote(Message.PingMessage.getSocketAddress(msg), remoteAddress);
 
         } else {
             logger.debug("PING from {}", remotePeer);
             //send pong
-            sendPong(msg.getRemoteSocketAddress());
+            try {
+                Message pongMsg = mMessagePool.borrowObject();
+                try {
+                    Message.PingMessage.formatResponse(pongMsg, mLocalId, remoteAddress);
+                    pongMsg.mPacket.setSocketAddress(remoteAddress);
+                    mDatagramSocket.send(pongMsg.mPacket);
+
+                } finally {
+                    mMessagePool.returnObject(pongMsg);
+                }
+            } catch (Exception e) {
+                logger.error("", e);
+            }
         }
 
         if(isInteresting(remotePeer)){
@@ -302,23 +315,6 @@ public class MondoNode {
 
             } finally {
                 mMessagePool.returnObject(msg);
-            }
-        } catch (Exception e) {
-            logger.error("", e);
-        }
-    }
-
-    private void sendPong(InetSocketAddress socketAddress) {
-        try {
-            Message pongMsg = mMessagePool.borrowObject();
-            try {
-                Message.PingMessage.formatResponse(pongMsg, mLocalId);
-
-                pongMsg.mPacket.setSocketAddress(socketAddress);
-                mDatagramSocket.send(pongMsg.mPacket);
-
-            } finally {
-                mMessagePool.returnObject(pongMsg);
             }
         } catch (Exception e) {
             logger.error("", e);

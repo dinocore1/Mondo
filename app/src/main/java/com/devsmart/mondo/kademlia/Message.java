@@ -46,7 +46,7 @@ public class Message {
 
         Response Payload:
         ID: Remote Peer's ID
-        SocketAddress: the socket address that the local peer is running
+        SocketAddress: the socket address that the ping request came in on
 
         ### FindPeers ###
         PT: 1
@@ -62,7 +62,10 @@ public class Message {
         PT: 2
 
         Request Payload:
-        ID, SocketAddress
+        TTL, ID, SocketAddress[]
+
+        Response Payload:
+        Yes/No, ID, SocketAddress[]
 
         */
     byte[] mRawData = new byte[64*1024];
@@ -123,6 +126,10 @@ public class Message {
             return new ID(msg.mRawData, 1);
         }
 
+        public static InetSocketAddress getSocketAddress(Message msg) {
+            return readIPv4AddressPort(msg.mRawData, 1 + ID.NUM_BYTES);
+        }
+
         public static void formatRequest(Message msg, ID id) {
             msg.mRawData[0] = PING;
             int offset = 1;
@@ -130,11 +137,12 @@ public class Message {
             msg.mPacket.setData(msg.mRawData, 0, offset);
         }
 
-        public static void formatResponse(Message msg, ID id) {
+        public static void formatResponse(Message msg, ID id, InetSocketAddress remoteAddress) {
             msg.mRawData[0] = PING | FLAG_RESPONSE;
 
             int offset = 1;
-            offset += id.write(msg.mRawData, 1);
+            offset += id.write(msg.mRawData, offset);
+            offset += writeIPv4AddressPort(msg.mRawData, offset, remoteAddress.getAddress(), remoteAddress.getPort());
             msg.mPacket.setData(msg.mRawData, 0, offset);
         }
     }
