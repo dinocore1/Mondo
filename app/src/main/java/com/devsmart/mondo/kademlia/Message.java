@@ -208,12 +208,12 @@ public class Message {
 
     public static class ConnectMessage {
 
-        public static void formatRequest(Message msg, ID targetId, ID fromID, Collection<InetSocketAddress> addresses) {
+        public static void formatRequest(Message msg, int tty, ID targetId, ID fromID, Collection<InetSocketAddress> addresses) {
             msg.mRawData[0] = CONNECT;
             int offset = 1;
 
             //tty
-            msg.mRawData[1] = 0;
+            msg.mRawData[1] = (byte) tty;
             offset += 1;
 
             offset += targetId.write(msg.mRawData, offset);
@@ -236,6 +236,10 @@ public class Message {
 
         public static ID getTargetId(Message msg) {
             return new ID(msg.mRawData, 2);
+        }
+
+        public static int getTTY(Message msg) {
+            return msg.mRawData[1];
         }
     }
 }

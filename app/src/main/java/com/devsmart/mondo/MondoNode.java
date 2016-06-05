@@ -34,6 +34,8 @@ public class MondoNode {
 
     private static final Pattern INETADDRESS_REGEX = Pattern.compile("^\\s*(.*?):(\\d+)\\s*$");
 
+    private static final int MAX_TTY = 8;
+
     private final File mRootDir;
     private File mConfigFile;
     private ConfigFile mConfig;
@@ -297,6 +299,14 @@ public class MondoNode {
             ID target = Message.ConnectMessage.getTargetId(msg);
             if(mLocalId.equals(target)) {
 
+            } else {
+                int tty = Message.ConnectMessage.getTTY(msg);
+                if(tty < MAX_TTY) {
+                    List<Peer> routingCanidates = mRoutingTable.getRoutingPeers(target);
+                    Peer forwardPeer = routingCanidates.get(0);
+                    sendConnect(forwardPeer.getInetSocketAddress(), tty++, target);
+
+                }
             }
         }
 
@@ -354,12 +364,12 @@ public class MondoNode {
         }
     }
 
-    public void sendConnect(InetSocketAddress inetSocketAddress, ID targetId) {
+    public void sendConnect(InetSocketAddress inetSocketAddress, int tty, ID targetId) {
         try {
             Message msg = mMessagePool.borrowObject();
             try {
                 List<InetSocketAddress> localAddresses = mLocalSocketAddressConsensus.getMostLikely();
-                Message.ConnectMessage.formatRequest(msg, targetId, mLocalId, localAddresses);
+                Message.ConnectMessage.formatRequest(msg, tty, targetId, mLocalId, localAddresses);
                 msg.mPacket.setSocketAddress(inetSocketAddress);
                 mDatagramSocket.send(msg.mPacket);
             } finally {

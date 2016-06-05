@@ -37,7 +37,7 @@ public class MaintainConnectionsTask implements Runnable {
                     if (!routingCanidates.isEmpty()) {
                         Peer viaPeer = routingCanidates.get(Math.min(routingCanidates.size(), mRandom.nextInt(8)));
                         logger.debug("trying to connect to {} via {}", peer.id, viaPeer);
-                        mNode.sendConnect(viaPeer.getInetSocketAddress(), peer.id);
+                        mNode.sendConnect(viaPeer.getInetSocketAddress(), 0, peer.id);
 
                         Thread.sleep(333);
 
