@@ -1,6 +1,8 @@
-package com.devsmart.mondo.kademlia;
+package com.devsmart.mondo;
 
 
+import com.devsmart.mondo.kademlia.Peer;
+import com.devsmart.mondo.kademlia.RoutingTable;
 import com.google.common.collect.ComparisonChain;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

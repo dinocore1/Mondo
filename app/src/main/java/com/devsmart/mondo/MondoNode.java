@@ -39,9 +39,9 @@ public class MondoNode {
     private ConfigFile mConfig;
     private ID mLocalId;
     private RoutingTable mRoutingTable;
-    private DatagramSocket mDatagramSocket;
+    protected DatagramSocket mDatagramSocket;
     private Thread mSocketReader;
-    private ScheduledExecutorService mTaskExecutors = Executors.newScheduledThreadPool(3, new ThreadFactory() {
+    ScheduledExecutorService mTaskExecutors = Executors.newScheduledThreadPool(3, new ThreadFactory() {
 
         int mTreadNum = 0;
 
@@ -54,7 +54,7 @@ public class MondoNode {
         }
     });
     private boolean mRunning;
-    private ObjectPool<Message> mMessagePool = new GenericObjectPool<Message>(new BasePooledObjectFactory<Message>() {
+    ObjectPool<Message> mMessagePool = new GenericObjectPool<Message>(new BasePooledObjectFactory<Message>() {
         @Override
         public Message create() throws Exception {
             return new Message();
@@ -67,7 +67,8 @@ public class MondoNode {
     });
     private ScheduledFuture<?> mTrimBucketTask;
     private ScheduledFuture<?> mFindPeersTask;
-    private Consensus<InetSocketAddress> mLocalSocketAddressConsensus = new Consensus<InetSocketAddress>(InetSocketAddress.class, 5);
+    private ScheduledFuture<?> mMaintainConnections;
+    Consensus<InetSocketAddress> mLocalSocketAddressConsensus = new Consensus<InetSocketAddress>(InetSocketAddress.class, 5);
 
 
     private static class ConfigFile {
@@ -116,11 +117,13 @@ public class MondoNode {
         }
 
         mFindPeersTask = mTaskExecutors.scheduleWithFixedDelay(new FindPeersTask(this, bootstrapAddresses), 5, 30, TimeUnit.SECONDS);
+        mMaintainConnections = mTaskExecutors.scheduleWithFixedDelay(new MaintainConnectionsTask(this), 5, 20, TimeUnit.SECONDS);
     }
 
     public void stop() {
         mFindPeersTask.cancel(false);
         mTrimBucketTask.cancel(false);
+        mMaintainConnections.cancel(false);
         mTaskExecutors.shutdown();
         mDatagramSocket.close();
     }
@@ -198,6 +201,11 @@ public class MondoNode {
                             case Message.FINDPEERS:
                                 handleFindPeers(msg);
                                 break;
+
+                            case Message.CONNECT:
+                                handleConnect(msg);
+                                break;
+
                         }
                     } catch (SocketTimeoutException e) {
                     } finally {
@@ -239,12 +247,13 @@ public class MondoNode {
             } catch (Exception e) {
                 logger.error("", e);
             }
+
+            if(isInteresting(remotePeer)){
+                remotePeer.startKeepAlive(mTaskExecutors, mLocalId, mDatagramSocket);
+            }
         }
 
-        if(isInteresting(remotePeer)){
-            mRoutingTable.addPeer(remotePeer);
-            remotePeer.startKeepAlive(mTaskExecutors, mLocalId, mDatagramSocket);
-        }
+
 
     }
 
@@ -256,7 +265,7 @@ public class MondoNode {
             if (msg.isResponse()) {
                 Collection<Peer> newPeers = Message.FindPeersMessage.getPeers(msg);
                 for (Peer p : newPeers) {
-                    mRoutingTable.addPeer(p);
+                    mRoutingTable.getPeer(p.id, p.getInetSocketAddress());
                 }
 
             } else {
@@ -280,6 +289,19 @@ public class MondoNode {
 
     }
 
+    private void handleConnect(Message msg) {
+
+        if (msg.isResponse()) {
+
+        } else {
+            ID target = Message.ConnectMessage.getTargetId(msg);
+            if(mLocalId.equals(target)) {
+
+            }
+        }
+
+    }
+
     /**
      * return true if this node decides this peer is "interesting". Where
      * "interesting" is loosely defined as this peer should be keep alive
@@ -289,15 +311,10 @@ public class MondoNode {
      */
     public boolean isInteresting(Peer peer) {
         ArrayList<Peer> bucket = mRoutingTable.getBucket(peer.id);
-        if(bucket.contains(peer)) {
-            return false;
-        }
-
 
         int alivePeers = 0;
         synchronized (bucket) {
             for(Peer p : bucket) {
-
                 alivePeers += p.getStatus() == Peer.Status.Alive ? 1 : 0;
             }
         }
@@ -327,6 +344,22 @@ public class MondoNode {
             try {
 
                 Message.FindPeersMessage.formatRequest(msg, targetId);
+                msg.mPacket.setSocketAddress(inetSocketAddress);
+                mDatagramSocket.send(msg.mPacket);
+            } finally {
+                mMessagePool.returnObject(msg);
+            }
+        } catch (Exception e) {
+            logger.error("", e);
+        }
+    }
+
+    public void sendConnect(InetSocketAddress inetSocketAddress, ID targetId) {
+        try {
+            Message msg = mMessagePool.borrowObject();
+            try {
+                List<InetSocketAddress> localAddresses = mLocalSocketAddressConsensus.getMostLikely();
+                Message.ConnectMessage.formatRequest(msg, targetId, mLocalId, localAddresses);
                 msg.mPacket.setSocketAddress(inetSocketAddress);
                 mDatagramSocket.send(msg.mPacket);
             } finally {

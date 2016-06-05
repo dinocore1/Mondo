@@ -1,7 +1,8 @@
-package com.devsmart.mondo.kademlia;
+package com.devsmart.mondo;
 
 
-import com.devsmart.mondo.MondoNode;
+import com.devsmart.mondo.kademlia.ID;
+import com.devsmart.mondo.kademlia.Peer;
 import com.google.common.collect.ComparisonChain;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -57,13 +58,12 @@ public class FindPeersTask implements Runnable {
                     logger.warn("no bootstrap nodes available");
                 } else {
                     for (InetSocketAddress bootstrapAddress : mBootstrapNodes) {
-                        logger.debug("send ping to {}", bootstrapAddress);
-                        mNode.sendPing(bootstrapAddress);
-                        Thread.sleep(250);
-
                         logger.debug("asking {} for new peers", bootstrapAddress);
                         mNode.sendFindPeers(bootstrapAddress, mNode.getLocalId());
-                        Thread.sleep(250);
+                        Thread.sleep(333);
+
+                        mNode.sendPing(bootstrapAddress);
+                        Thread.sleep(333);
                     }
                 }
             } else {
@@ -73,16 +73,14 @@ public class FindPeersTask implements Runnable {
                 while(it.hasNext()) {
                     Peer peer = it.next();
 
-                    logger.debug("send ping to {}", peer.getInetSocketAddress());
-                    mNode.sendPing(peer.getInetSocketAddress());
-                    Thread.sleep(250);
-
-                    logger.debug("asking {} for new peers", peer);
-                    mNode.sendFindPeers(peer.getInetSocketAddress(), mNode.getLocalId());
-                    Thread.sleep(250);
-                    numRequestsSent++;
-                    if(numRequestsSent > MIN_NUM_PEERS) {
-                        break;
+                    if(peer.getStatus() == Peer.Status.Alive) {
+                        logger.debug("asking {} for new peers", peer);
+                        mNode.sendFindPeers(peer.getInetSocketAddress(), mNode.getLocalId());
+                        Thread.sleep(333);
+                        numRequestsSent++;
+                        if (numRequestsSent > MIN_NUM_PEERS) {
+                            break;
+                        }
                     }
                 }
             }

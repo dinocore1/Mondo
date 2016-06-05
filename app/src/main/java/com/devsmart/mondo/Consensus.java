@@ -3,7 +3,7 @@ package com.devsmart.mondo;
 
 import java.lang.reflect.Array;
 import java.net.InetSocketAddress;
-import java.util.HashMap;
+import java.util.*;
 
 /**
  * This datastructor protects against a small number of misbehaving peers
@@ -44,7 +44,7 @@ public class Consensus<T> {
     }
 
 
-    public void compute() {
+    public HashMap<T, Integer> compute() {
         HashMap<T, Integer> histogram = new HashMap<T, Integer>();
         for(int x=0;x<DIM_X;x++){
             for(int y=0;y<mDimY;y++) {
@@ -59,6 +59,24 @@ public class Consensus<T> {
                 }
             }
         }
+        return histogram;
+    }
+
+    public List<T> getMostLikely() {
+        final HashMap<T, Integer> historgram = compute();
+        ArrayList<T> retval = new ArrayList<T>(historgram.keySet());
+        Collections.sort(retval, new Comparator<T>() {
+            @Override
+            public int compare(T a, T b) {
+                final int countA = historgram.get(a);
+                final int countB = historgram.get(b);
+
+                return countB - countA;
+            }
+        });
+
+
+        return retval;
     }
 
 

@@ -14,6 +14,7 @@ public class Message {
 
     public static final int PING = 0;
     public static final int FINDPEERS = 1;
+    public static final int CONNECT = 2;
 
     private static final int FLAG_RESPONSE = 0x10;
     /*
@@ -62,9 +63,14 @@ public class Message {
         PT: 2
 
         Request Payload:
-        TTL, ID, SocketAddress[]
+        TTL: 1-byte begins at 0, incremented by each hop
+        ID: destId
+        ID: fromId
+        SocketAddress[]: from address
 
         Response Payload:
+        TTL: 1-byte begins at 0, incremented by each hop
+        ID: destId
         Yes/No, ID, SocketAddress[]
 
         */
@@ -197,6 +203,39 @@ public class Message {
             }
 
             return retval;
+        }
+    }
+
+    public static class ConnectMessage {
+
+        public static void formatRequest(Message msg, ID targetId, ID fromID, Collection<InetSocketAddress> addresses) {
+            msg.mRawData[0] = CONNECT;
+            int offset = 1;
+
+            //tty
+            msg.mRawData[1] = 0;
+            offset += 1;
+
+            offset += targetId.write(msg.mRawData, offset);
+
+            offset += fromID.write(msg.mRawData, offset);
+
+            final int max=Math.min(4, addresses.size());
+            msg.mRawData[offset] = (byte) max;
+            offset += 1;
+            int i=0;
+            for(InetSocketAddress address : addresses){
+                offset += writeIPv4AddressPort(msg.mRawData, offset, address.getAddress(), address.getPort());
+                if(++i >= max) {
+                    break;
+                }
+            }
+
+            msg.mPacket.setData(msg.mRawData, 0, offset);
+        }
+
+        public static ID getTargetId(Message msg) {
+            return new ID(msg.mRawData, 2);
         }
     }
 }

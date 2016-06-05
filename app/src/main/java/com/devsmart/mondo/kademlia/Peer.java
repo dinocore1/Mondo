@@ -18,7 +18,7 @@ public class Peer {
         Unknown,
         Alive,
         Dying,
-        statusA, Dead
+        Dead
     }
 
     public final ID id;
@@ -67,14 +67,14 @@ public class Peer {
         }
     }
 
-    public void startKeepAlive(ScheduledExecutorService executorService, ID localId, DatagramSocket socket) {
+    public synchronized void startKeepAlive(ScheduledExecutorService executorService, ID localId, DatagramSocket socket) {
         if(mKeepAliveTask == null) {
             KeepAliveTask task = new KeepAliveTask(this, localId, socket);
             mKeepAliveTask = executorService.scheduleWithFixedDelay(task, 1, 5, TimeUnit.SECONDS);
         }
     }
 
-    public void stopKeepAlive() {
+    public synchronized void stopKeepAlive() {
         if(mKeepAliveTask != null) {
             mKeepAliveTask.cancel(false);
             mKeepAliveTask = null;

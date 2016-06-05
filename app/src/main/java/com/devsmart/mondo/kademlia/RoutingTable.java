@@ -9,7 +9,7 @@ import java.util.*;
 public class RoutingTable {
 
     private final ID mLocalNode;
-    ArrayList<Peer>[] mPeers;
+    public ArrayList<Peer>[] mPeers;
 
     @SuppressWarnings("unchecked")
     public RoutingTable(ID localId) {
@@ -26,7 +26,7 @@ public class RoutingTable {
         return bucket;
     }
 
-    public Collection<Peer> getRoutingPeers(ID target) {
+    public List<Peer> getRoutingPeers(ID target) {
         ArrayList<Peer> retval = new ArrayList<Peer>();
         getAllPeers(retval);
 
@@ -48,30 +48,22 @@ public class RoutingTable {
     }
 
     public Peer getPeer(ID id, InetSocketAddress socketAddress) {
-        ArrayList<Peer> bucket = getBucket(id);
         Peer retval = new Peer(id, socketAddress);
+        if(id.equals(mLocalNode)) {
+            return retval;
+        }
 
+        ArrayList<Peer> bucket = getBucket(id);
         synchronized (bucket) {
             for (Peer p : bucket) {
                 if (p.equals(retval)) {
-                    retval = p;
-                    break;
+                    return p;
                 }
             }
-        }
 
+            bucket.add(retval);
+        }
         return retval;
-    }
-
-    public void addPeer(Peer peer) {
-        if(peer.id.equals(mLocalNode)) {
-            return;
-        }
-
-        ArrayList<Peer> bucket = getBucket(peer.id);
-        synchronized (bucket) {
-            bucket.add(peer);
-        }
     }
 
     public void getAllPeers(Collection<Peer> peerList) {
