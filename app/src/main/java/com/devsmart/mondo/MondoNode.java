@@ -299,13 +299,21 @@ public class MondoNode {
             ID target = Message.ConnectMessage.getTargetId(msg);
             if(mLocalId.equals(target)) {
 
+                final ID peerId = Message.ConnectMessage.getFromAddress(msg);
+                for(InetSocketAddress address : Message.ConnectMessage.getSocketAddresses(msg)) {
+                    Peer peer = mRoutingTable.getPeer(peerId, address);
+                    if(isInteresting(peer)) {
+                        peer.startKeepAlive(mTaskExecutors, mLocalId, mDatagramSocket);
+                    }
+
+                }
+
             } else {
                 int tty = Message.ConnectMessage.getTTY(msg);
                 if(tty < MAX_TTY) {
                     List<Peer> routingCanidates = mRoutingTable.getRoutingPeers(target);
                     Peer forwardPeer = routingCanidates.get(0);
-                    sendConnect(forwardPeer.getInetSocketAddress(), tty++, target);
-
+                    sendConnect(forwardPeer.getInetSocketAddress(), tty + 1, target);
                 }
             }
         }
