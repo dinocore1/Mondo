@@ -320,7 +320,7 @@ public class MondoNode {
                     for(Peer forwardPeer : routingCanidates) {
                         if(!forwardPeer.getInetSocketAddress().equals(msg.getRemoteSocketAddress())) {
                             sendConnect(forwardPeer.getInetSocketAddress(), tty + 1, target, fromId, connectAddresses);
-                            if (++count > 3) {
+                            if (++count > 5) {
                                 break;
                             }
                         }

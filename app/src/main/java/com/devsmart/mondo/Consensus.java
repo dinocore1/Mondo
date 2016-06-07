@@ -37,8 +37,8 @@ public class Consensus<T> {
     }
 
     public synchronized void vote(T value, InetSocketAddress from) {
-        final int x = from.hashCode() % DIM_X;
-        final int y = value.hashCode() % mDimY;
+        final int x = Math.abs(from.hashCode() % DIM_X);
+        final int y = Math.abs(value.hashCode() % mDimY);
 
         mAddresses[x][y] = value;
     }
