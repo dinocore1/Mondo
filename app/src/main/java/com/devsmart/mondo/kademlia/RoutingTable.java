@@ -39,7 +39,7 @@ public class RoutingTable {
 
                 return ComparisonChain.start()
                         .compareTrueFirst(statusA == Peer.Status.Alive, statusB == Peer.Status.Alive)
-                        .compare(a, b, distanceComparator)
+                        .compare(b, a, distanceComparator)
                         .result();
             }
         };

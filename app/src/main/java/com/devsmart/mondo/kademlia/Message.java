@@ -213,7 +213,7 @@ public class Message {
             int offset = 1;
 
             //tty
-            msg.mRawData[1] = (byte) tty;
+            msg.mRawData[offset] = (byte) tty;
             offset += 1;
 
             offset += targetId.write(msg.mRawData, offset);
@@ -238,7 +238,7 @@ public class Message {
             return new ID(msg.mRawData, 2);
         }
 
-        public static ID getFromAddress(Message msg) {
+        public static ID getFromId(Message msg) {
             int offset = 2 + ID.NUM_BYTES;
             return new ID(msg.mRawData, offset);
         }

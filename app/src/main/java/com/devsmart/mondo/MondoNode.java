@@ -293,27 +293,38 @@ public class MondoNode {
 
     private void handleConnect(Message msg) {
 
+        logger.debug("CONNECT from {}", msg.mPacket.getSocketAddress());
+
         if (msg.isResponse()) {
 
         } else {
-            ID target = Message.ConnectMessage.getTargetId(msg);
+            final ID target = Message.ConnectMessage.getTargetId(msg);
+            final ID fromId = Message.ConnectMessage.getFromId(msg);
+            Collection<InetSocketAddress> connectAddresses = Message.ConnectMessage.getSocketAddresses(msg);
             if(mLocalId.equals(target)) {
-
-                final ID peerId = Message.ConnectMessage.getFromAddress(msg);
-                for(InetSocketAddress address : Message.ConnectMessage.getSocketAddresses(msg)) {
-                    Peer peer = mRoutingTable.getPeer(peerId, address);
+                for(InetSocketAddress address : connectAddresses) {
+                    if(address.getAddress().isAnyLocalAddress() || address.getAddress().isLoopbackAddress()) {
+                        continue;
+                    }
+                    Peer peer = mRoutingTable.getPeer(fromId, address);
                     if(isInteresting(peer)) {
                         peer.startKeepAlive(mTaskExecutors, mLocalId, mDatagramSocket);
                     }
-
                 }
 
             } else {
                 int tty = Message.ConnectMessage.getTTY(msg);
                 if(tty < MAX_TTY) {
                     List<Peer> routingCanidates = mRoutingTable.getRoutingPeers(target);
-                    Peer forwardPeer = routingCanidates.get(0);
-                    sendConnect(forwardPeer.getInetSocketAddress(), tty + 1, target);
+                    int count = 0;
+                    for(Peer forwardPeer : routingCanidates) {
+                        sendConnect(forwardPeer.getInetSocketAddress(), tty + 1, target, fromId, connectAddresses);
+                        if(++count > 3) {
+                            break;
+                        }
+                    }
+
+
                 }
             }
         }
@@ -328,6 +339,10 @@ public class MondoNode {
      * @return
      */
     public boolean isInteresting(Peer peer) {
+        if(peer.id.equals(mLocalId)) {
+            return false;
+        }
+
         ArrayList<Peer> bucket = mRoutingTable.getBucket(peer.id);
 
         int alivePeers = 0;
@@ -372,12 +387,11 @@ public class MondoNode {
         }
     }
 
-    public void sendConnect(InetSocketAddress inetSocketAddress, int tty, ID targetId) {
+    public void sendConnect(InetSocketAddress inetSocketAddress, int tty, ID targetId, ID fromId, Collection<InetSocketAddress> localAddresses) {
         try {
             Message msg = mMessagePool.borrowObject();
             try {
-                List<InetSocketAddress> localAddresses = mLocalSocketAddressConsensus.getMostLikely();
-                Message.ConnectMessage.formatRequest(msg, tty, targetId, mLocalId, localAddresses);
+                Message.ConnectMessage.formatRequest(msg, tty, targetId, fromId, localAddresses);
                 msg.mPacket.setSocketAddress(inetSocketAddress);
                 mDatagramSocket.send(msg.mPacket);
             } finally {

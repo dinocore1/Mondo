@@ -5,6 +5,10 @@ import com.devsmart.mondo.kademlia.Peer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.Inet4Address;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.NetworkInterface;
 import java.util.*;
 
 public class MaintainConnectionsTask implements Runnable {
@@ -35,15 +39,25 @@ public class MaintainConnectionsTask implements Runnable {
 
                     List<Peer> routingCanidates = mNode.getRoutingTable().getRoutingPeers(peer.id);
                     if (!routingCanidates.isEmpty()) {
-                        Peer viaPeer = routingCanidates.get(Math.min(routingCanidates.size(), mRandom.nextInt(8)));
-                        logger.debug("trying to connect to {} via {}", peer.id, viaPeer);
-                        mNode.sendConnect(viaPeer.getInetSocketAddress(), 0, peer.id);
+                        int count = 0;
+                        for(Peer viaPeer : routingCanidates) {
+                            if(!viaPeer.equals(peer)) {
+                                logger.debug("trying to connect to {} via {}", peer.id, viaPeer);
+                                List<InetSocketAddress> localAddresses = mNode.mLocalSocketAddressConsensus.getMostLikely();
+                                addLocalAddresses(localAddresses);
 
-                        Thread.sleep(333);
+                                mNode.sendConnect(viaPeer.getInetSocketAddress(), 0, peer.id, mNode.getLocalId(), localAddresses);
 
-                        peer.startKeepAlive(mNode.mTaskExecutors, mNode.getLocalId(), mNode.mDatagramSocket);
+                                Thread.sleep(333);
+
+                                peer.startKeepAlive(mNode.mTaskExecutors, mNode.getLocalId(), mNode.mDatagramSocket);
+
+                                if(++count > 3){
+                                    break;
+                                }
+                            }
+                        }
                     }
-
                 }
             }
 
@@ -52,6 +66,23 @@ public class MaintainConnectionsTask implements Runnable {
         }
 
 
+    }
+
+    private void addLocalAddresses(List<InetSocketAddress> localAddresses) {
+        try {
+            for (NetworkInterface iface : Collections.list(NetworkInterface.getNetworkInterfaces())) {
+                if(!iface.isLoopback() && iface.isUp()) {
+                    for(InetAddress address : Collections.list(iface.getInetAddresses())){
+                        if(address instanceof Inet4Address && !address.isAnyLocalAddress() && !address.isLoopbackAddress()) {
+                            localAddresses.add(new InetSocketAddress(address, mNode.mDatagramSocket.getLocalPort()));
+                        }
+                    }
+                }
+
+            }
+        } catch (Exception e) {
+            logger.error("", e);
+        }
     }
 
 
