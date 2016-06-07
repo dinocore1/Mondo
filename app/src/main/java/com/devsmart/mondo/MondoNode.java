@@ -318,9 +318,11 @@ public class MondoNode {
                     List<Peer> routingCanidates = mRoutingTable.getRoutingPeers(target);
                     int count = 0;
                     for(Peer forwardPeer : routingCanidates) {
-                        sendConnect(forwardPeer.getInetSocketAddress(), tty + 1, target, fromId, connectAddresses);
-                        if(++count > 3) {
-                            break;
+                        if(!forwardPeer.getInetSocketAddress().equals(msg.getRemoteSocketAddress())) {
+                            sendConnect(forwardPeer.getInetSocketAddress(), tty + 1, target, fromId, connectAddresses);
+                            if (++count > 3) {
+                                break;
+                            }
                         }
                     }
 
