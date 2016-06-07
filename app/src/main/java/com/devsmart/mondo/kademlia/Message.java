@@ -250,12 +250,12 @@ public class Message {
         public static Collection<InetSocketAddress> getSocketAddresses(Message msg) {
             ArrayList<InetSocketAddress> retval = new ArrayList<InetSocketAddress>(4);
             int offset = 2 + 2*ID.NUM_BYTES;
-            final int size = msg.mRawData[offset];
+            final int size = 0xff & msg.mRawData[offset];
             offset += 1;
 
             for(int i=0;i<size;i++) {
                 retval.add(readIPv4AddressPort(msg.mRawData, offset));
-                offset += ID.NUM_BYTES;
+                offset += 6;
             }
 
             return retval;
