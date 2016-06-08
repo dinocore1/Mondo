@@ -40,6 +40,7 @@ public class GenerateNewConnections implements Runnable {
             });
             if(targetPeer.isPresent()) {
                 Peer peer = targetPeer.get();
+                peer.startKeepAlive(mNode.mTaskExecutors, mNode.getLocalId(), mNode.mDatagramSocket);
 
                 List<Peer> routingCanidates = mNode.getRoutingTable().getRoutingPeers(peer.id);
                 if (!routingCanidates.isEmpty()) {
@@ -51,10 +52,6 @@ public class GenerateNewConnections implements Runnable {
                             addLocalAddresses(localAddresses);
 
                             mNode.sendConnect(viaPeer.getInetSocketAddress(), 0, peer.id, mNode.getLocalId(), localAddresses);
-
-                            Thread.sleep(25);
-
-                            peer.startKeepAlive(mNode.mTaskExecutors, mNode.getLocalId(), mNode.mDatagramSocket);
 
                             Thread.sleep(200);
 

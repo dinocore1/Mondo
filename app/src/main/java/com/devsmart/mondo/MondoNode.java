@@ -233,6 +233,8 @@ public class MondoNode {
             logger.debug("PONG from {}", remotePeer);
             mLocalSocketAddressConsensus.vote(Message.PingMessage.getSocketAddress(msg), remoteAddress);
 
+            remotePeer.startKeepAlive(mTaskExecutors, mLocalId, mDatagramSocket);
+
         } else {
             logger.debug("PING from {}", remotePeer);
             //send pong
@@ -274,13 +276,23 @@ public class MondoNode {
                 ID target = Message.FindPeersMessage.getTargetId(msg);
                 Collection<Peer> peers = mRoutingTable.getRoutingPeers(target);
 
-                Message resp = mMessagePool.borrowObject();
-                try {
-                    resp.mPacket.setSocketAddress(msg.getRemoteSocketAddress());
-                    Message.FindPeersMessage.formatResponse(resp, peers);
-                    mDatagramSocket.send(resp.mPacket);
-                } finally {
-                    mMessagePool.returnObject(resp);
+                Iterator<Peer> it = peers.iterator();
+                while(it.hasNext()) {
+                    Peer p = it.next();
+                    if(p.getStatus() != Peer.Status.Alive) {
+                        it.remove();
+                    }
+                }
+
+                if(!peers.isEmpty()) {
+                    Message resp = mMessagePool.borrowObject();
+                    try {
+                        resp.mPacket.setSocketAddress(msg.getRemoteSocketAddress());
+                        Message.FindPeersMessage.formatResponse(resp, peers);
+                        mDatagramSocket.send(resp.mPacket);
+                    } finally {
+                        mMessagePool.returnObject(resp);
+                    }
                 }
 
             }

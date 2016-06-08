@@ -62,8 +62,7 @@ public class TrimBucketTask implements Runnable {
                     final Peer.Status status = peer.getStatus();
                     final long age = peer.getAge();
                     if(bucket.size() > NUM_PEERS_PER_BUCKET
-                            || status == Peer.Status.Dead
-                            || (status == Peer.Status.Unknown && age > GIVE_UP_MILLISEC)) {
+                            || status == Peer.Status.Dead) {
                         killPeer(peer);
                         it.remove();
                         numPrunedPeers++;

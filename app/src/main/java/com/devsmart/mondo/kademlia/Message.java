@@ -74,7 +74,7 @@ public class Message {
         Yes/No, ID, SocketAddress[]
 
         */
-    byte[] mRawData = new byte[64*1024];
+    byte[] mRawData = new byte[64 * 1024];
     public final DatagramPacket mPacket = new DatagramPacket(mRawData, mRawData.length);
 
     private static int writeIPv4AddressPort(byte[] buf, int offset, InetAddress address, int port) {
@@ -96,7 +96,7 @@ public class Message {
             port |= ((buf[offset + 5] << 8) & 0xFF00);
 
             return new InetSocketAddress(address, port);
-        } catch(UnknownHostException e) {
+        } catch (UnknownHostException e) {
             Throwables.propagate(e);
             return null;
         }
@@ -172,12 +172,12 @@ public class Message {
             int i = 0;
 
             int offset = 2;
-            for(Peer p : peers) {
+            for (Peer p : peers) {
                 offset += p.id.write(msg.mRawData, offset);
                 InetSocketAddress socketAddress = p.getInetSocketAddress();
                 offset += writeIPv4AddressPort(msg.mRawData, offset, socketAddress.getAddress(), socketAddress.getPort());
 
-                if(++i >= max) {
+                if (++i >= max) {
                     break;
                 }
             }
@@ -193,7 +193,7 @@ public class Message {
             ArrayList<Peer> retval = new ArrayList<Peer>(numPeers);
 
             int offset = 2;
-            for(int i=0;i<numPeers;i++) {
+            for (int i = 0; i < numPeers; i++) {
                 ID id = new ID(msg.mRawData, offset);
                 offset += ID.NUM_BYTES;
                 InetSocketAddress socketAddress = readIPv4AddressPort(msg.mRawData, offset);
@@ -220,13 +220,13 @@ public class Message {
 
             offset += fromID.write(msg.mRawData, offset);
 
-            final int max=Math.min(4, addresses.size());
+            final int max = Math.min(4, addresses.size());
             msg.mRawData[offset] = (byte) max;
             offset += 1;
-            int i=0;
-            for(InetSocketAddress address : addresses){
+            int i = 0;
+            for (InetSocketAddress address : addresses) {
                 offset += writeIPv4AddressPort(msg.mRawData, offset, address.getAddress(), address.getPort());
-                if(++i >= max) {
+                if (++i >= max) {
                     break;
                 }
             }
@@ -249,11 +249,11 @@ public class Message {
 
         public static Collection<InetSocketAddress> getSocketAddresses(Message msg) {
             ArrayList<InetSocketAddress> retval = new ArrayList<InetSocketAddress>(4);
-            int offset = 2 + 2*ID.NUM_BYTES;
+            int offset = 2 + 2 * ID.NUM_BYTES;
             final int size = 0xff & msg.mRawData[offset];
             offset += 1;
 
-            for(int i=0;i<size;i++) {
+            for (int i = 0; i < size; i++) {
                 retval.add(readIPv4AddressPort(msg.mRawData, offset));
                 offset += 6;
             }
