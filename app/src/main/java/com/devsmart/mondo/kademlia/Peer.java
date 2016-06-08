@@ -26,10 +26,12 @@ public class Peer {
     private long mFirstSeen = -1;
     private long mLastSeen = -1;
     private Future<?> mKeepAliveTask;
+    private final long mCreated;
 
     public Peer(ID id, InetSocketAddress socketAddress) {
         this.id = id;
         this.mSocketAddress = socketAddress;
+        this.mCreated = System.nanoTime();
     }
 
     public InetSocketAddress getInetSocketAddress() {
@@ -48,8 +50,13 @@ public class Peer {
         return retval / 1000000;
     }
 
-    public long getAge() {
+    public long getFirstSeen() {
         long retval = System.nanoTime() - mFirstSeen;
+        return retval / 1000000;
+    }
+
+    public long getAge() {
+        long retval = System.nanoTime() - mCreated;
         return retval / 1000000;
     }
 

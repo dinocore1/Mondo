@@ -33,7 +33,7 @@ public class FindPeersTask implements Runnable {
                     .compareTrueFirst(statusA == Peer.Status.Alive, statusB == Peer.Status.Alive)
                     .compareTrueFirst(statusA == Peer.Status.Dying, statusB == Peer.Status.Dying)
                     .compare(numCommonB, numCommonA)
-                    .compare(b.getAge(), a.getAge())
+                    .compare(b.getFirstSeen(), a.getFirstSeen())
                     .result();
 
             return retval;

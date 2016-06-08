@@ -21,18 +21,18 @@ public class TrimBucketTaskTest {
 
         Peer alivePeer2 = mock(Peer.class);
         when(alivePeer2.getStatus()).thenReturn(Peer.Status.Alive);
-        when(alivePeer2.getAge()).thenReturn(20l * 1000l);
+        when(alivePeer2.getFirstSeen()).thenReturn(20l * 1000l);
         bucket.add(alivePeer2);
 
         Peer alivePeer1 = mock(Peer.class);
         when(alivePeer1.getStatus()).thenReturn(Peer.Status.Alive);
-        when(alivePeer1.getAge()).thenReturn(1l * 1000l);
+        when(alivePeer1.getFirstSeen()).thenReturn(1l * 1000l);
         bucket.add(alivePeer1);
 
 
         Peer deadPeer = mock(Peer.class);
         when(deadPeer.getStatus()).thenReturn(Peer.Status.Dead);
-        when(deadPeer.getAge()).thenReturn(30l * 1000l);
+        when(deadPeer.getFirstSeen()).thenReturn(30l * 1000l);
         bucket.add(deadPeer);
 
 
