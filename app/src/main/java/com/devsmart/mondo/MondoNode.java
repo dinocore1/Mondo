@@ -119,7 +119,7 @@ public class MondoNode {
         }
 
         mFindPeersTask = mTaskExecutors.scheduleWithFixedDelay(new FindPeersTask(this, bootstrapAddresses), 5, 30, TimeUnit.SECONDS);
-        mMaintainConnections = mTaskExecutors.scheduleWithFixedDelay(new MaintainConnectionsTask(this), 5, 20, TimeUnit.SECONDS);
+        mMaintainConnections = mTaskExecutors.scheduleWithFixedDelay(new GenerateNewConnections(this), 5, 5, TimeUnit.SECONDS);
     }
 
     public void stop() {
@@ -344,13 +344,23 @@ public class MondoNode {
             return false;
         }
 
+        boolean hasAliveConnection = false;
+
         ArrayList<Peer> bucket = mRoutingTable.getBucket(peer.id);
 
         int alivePeers = 0;
         synchronized (bucket) {
             for(Peer p : bucket) {
-                alivePeers += p.getStatus() == Peer.Status.Alive ? 1 : 0;
+                final Peer.Status status = p.getStatus();
+                if(p.id.equals(peer.id) && status == Peer.Status.Alive) {
+                    hasAliveConnection = true;
+                }
+                alivePeers += status == Peer.Status.Alive ? 1 : 0;
             }
+        }
+
+        if(hasAliveConnection) {
+            return false;
         }
 
         return alivePeers < TrimBucketTask.NUM_ALIVE_PEERS_PER_BUCKET;
