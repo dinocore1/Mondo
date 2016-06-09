@@ -5,6 +5,7 @@ import com.google.common.io.BaseEncoding;
 
 import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
+import java.util.Random;
 import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -13,6 +14,7 @@ public class Peer {
 
     private static final int TIME_DIEING = 15 * 1000;
     private static final int TIME_DEAD = 60 * 1000;
+    private static final Random RANDOM = new Random();
 
     public enum Status {
         Unknown,
@@ -77,7 +79,9 @@ public class Peer {
     public synchronized void startKeepAlive(ScheduledExecutorService executorService, ID localId, DatagramSocket socket) {
         if(mKeepAliveTask == null) {
             KeepAliveTask task = new KeepAliveTask(this, localId, socket);
-            mKeepAliveTask = executorService.scheduleWithFixedDelay(task, 1, 5, TimeUnit.SECONDS);
+
+            long wait = 100 + RANDOM.nextInt(600);
+            mKeepAliveTask = executorService.scheduleWithFixedDelay(task, wait, 1500, TimeUnit.MILLISECONDS);
         }
     }
 
@@ -106,10 +110,9 @@ public class Peer {
 
     @Override
     public String toString() {
-        return String.format("%s:%s %s",
+        return String.format("[%s:%s]",
                 id.toString(BaseEncoding.base64Url()).substring(0, 6),
-                mSocketAddress,
-                getStatus().name()
+                mSocketAddress
         );
     }
 }

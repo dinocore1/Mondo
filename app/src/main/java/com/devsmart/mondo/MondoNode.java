@@ -227,13 +227,11 @@ public class MondoNode {
         final ID remoteId = Message.PingMessage.getId(msg);
         final InetSocketAddress remoteAddress = msg.getRemoteSocketAddress();
         Peer remotePeer = mRoutingTable.getPeer(remoteId, remoteAddress);
-        remotePeer.markSeen();
 
         if (msg.isResponse()) {
             logger.debug("PONG from {}", remotePeer);
             mLocalSocketAddressConsensus.vote(Message.PingMessage.getSocketAddress(msg), remoteAddress);
 
-            remotePeer.startKeepAlive(mTaskExecutors, mLocalId, mDatagramSocket);
 
         } else {
             logger.debug("PING from {}", remotePeer);
@@ -252,12 +250,11 @@ public class MondoNode {
                 logger.error("", e);
             }
 
-            if(isInteresting(remotePeer)){
-                remotePeer.startKeepAlive(mTaskExecutors, mLocalId, mDatagramSocket);
-            }
         }
-
-
+        if(isInteresting(remotePeer)) {
+            remotePeer.startKeepAlive(mTaskExecutors, mLocalId, mDatagramSocket);
+        }
+        remotePeer.markSeen();
 
     }
 

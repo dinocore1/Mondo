@@ -5,3 +5,7 @@ you donate some of your harddrive's storage space in exchange for redundant back
 
 
 Mondo is in early development and doesnt do anything usefull right now...
+
+
+Rolling Hash:
+http://www.codeproject.com/Articles/801608/Using-a-rolling-hash-to-break-up-binary-files
