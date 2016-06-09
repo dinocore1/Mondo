@@ -6,15 +6,13 @@ import com.google.common.hash.Hasher;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedList;
 
 public class DataStreamBreaker {
 
-    private static final int WIDTH = 64; //number of bytes in window
-    private static final long SEED = 2273; // rolling hash seed
-
+    private final int WINDOW_SIZE = 48;
+    private final Buzhash mBuzHash = new Buzhash(WINDOW_SIZE);
     private final HashFunction mSecureHash;
     private final long mMask;
 
@@ -29,31 +27,27 @@ public class DataStreamBreaker {
 
         Hasher hasher = mSecureHash.newHasher();
 
-        long maxSeed = SEED;
+
         byte[] buffer = new byte[32 * 1024];
-        byte[] circle = new byte[WIDTH];
+        byte[] circle = new byte[WINDOW_SIZE];
         long hash = 0;
         int circleIndex = 0;
         long last = 0;
         long pos = 0;
 
-        for(int i=0;i<WIDTH;i++) {
-            maxSeed *= maxSeed;
-        }
-
         int bytesRead;
 
         while((bytesRead = in.read(buffer, 0, buffer.length)) > 0) {
             for (int i = 0; i < bytesRead; i++) {
-                hash = buffer[i] + ((hash - (maxSeed * circle[circleIndex])) * SEED);
+                hash = mBuzHash.roll(circle[circleIndex], buffer[i]);
                 circle[circleIndex] = buffer[i];
-                circleIndex = ++circleIndex % WIDTH;
+                circleIndex = ++circleIndex % WINDOW_SIZE;
 
                 pos++;
 
                 hasher.putByte(buffer[i]);
 
-                if ((hash | mMask) == hash) {
+                if ((hash & mMask) == 0) {
                     //segment boundery found
                     Segment segment = new Segment(last, pos - last, hasher.hash());
                     retval.add(segment);

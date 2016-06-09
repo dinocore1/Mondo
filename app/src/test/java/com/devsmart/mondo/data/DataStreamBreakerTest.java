@@ -40,7 +40,7 @@ public class DataStreamBreakerTest {
     @Test
     public void testDataStreamSegments() throws Exception {
 
-        final int numBits = 8;
+        final int numBits = 11;
         byte[] data = new byte[4*1024];
 
         Random r = new Random(1);
@@ -50,11 +50,9 @@ public class DataStreamBreakerTest {
         Iterable<Segment> segments1 = dataBreaker.getSegments(new ByteArrayInputStream(data));
 
 
+        data[49] = 24;
         dataBreaker = new DataStreamBreaker(Hashing.md5(), numBits);
-        Iterable<Segment> segments2 = dataBreaker.getSegments(
-                new SequenceInputStream(
-                        new ByteArrayInputStream(new byte[]{0x0, 0x32}),
-                        new ByteArrayInputStream(data)));
+        Iterable<Segment> segments2 = dataBreaker.getSegments(new ByteArrayInputStream(data));
 
         System.out.println(String.format("%s\n%s",
                 Iterables.toString(segments1),
