@@ -1,11 +1,8 @@
 package com.devsmart.mondo.data;
 
-import com.google.common.hash.HashFunction;
-import com.google.common.hash.Hashing;
-
 import java.util.Random;
 
-import static com.google.common.base.Preconditions.*;
+import static com.google.common.base.Preconditions.checkArgument;
 
 public class Buzhash {
 
@@ -22,35 +19,42 @@ public class Buzhash {
 
 
     private final int mWindowSize;
+    private final byte[] mWindow;
     private long mHashvalue;
+    private int mBufPos;
+    private long mBytesAdded ;
 
     public Buzhash(int windowSize) {
-        checkArgument(windowSize > 0 && windowSize <= WORD_SIZE);
+        checkArgument(windowSize > 0 && windowSize < WORD_SIZE);
         mWindowSize = windowSize;
+        mWindow = new byte[mWindowSize];
+        reset();
     }
 
 
-    public long addByte(byte b) {
-        mHashvalue = fastleftshift1(mHashvalue);
+    public long addByte(final byte b) {
+
+        mHashvalue = Long.rotateLeft(mHashvalue, 1);
+
+        if(++mBytesAdded > mWindowSize) {
+            mHashvalue ^= Long.rotateLeft(hash(mWindow[mBufPos]), mWindowSize);
+        }
+
         mHashvalue ^= hash(b);
+
+        mWindow[mBufPos] = b;
+        mBufPos = (mBufPos + 1) % mWindowSize;
+
         return mHashvalue;
     }
 
-
-    public long roll(byte out, byte in) {
-        mHashvalue =  fastleftshift1(mHashvalue) ^ hash(in) ^ fastleftshiftn(hash(out));
-        return mHashvalue;
+    public void reset() {
+        mHashvalue = 0;
+        mBytesAdded = 0;
+        mBufPos = 0;
     }
 
     private long hash(byte b) {
         return HASHMAP[0xff & b];
-    }
-
-    private long fastleftshiftn(long x)  {
-        return  (x << mWindowSize ) | (x >>> (WORD_SIZE-mWindowSize)) ;
-    }
-
-    private static long fastleftshift1(long x)  {
-        return  (x << 1 ) | (x >>> (WORD_SIZE-1)) ;
     }
 }

@@ -11,8 +11,7 @@ import java.util.LinkedList;
 
 public class DataStreamBreaker {
 
-    private final int WINDOW_SIZE = 48;
-    private final Buzhash mBuzHash = new Buzhash(WINDOW_SIZE);
+    private static final int WINDOW_SIZE = 50;
     private final HashFunction mSecureHash;
     private final long mMask;
 
@@ -27,25 +26,20 @@ public class DataStreamBreaker {
 
         Hasher hasher = mSecureHash.newHasher();
 
-
+        Buzhash buzHash = new Buzhash(WINDOW_SIZE);
+        buzHash.reset();
         byte[] buffer = new byte[32 * 1024];
-        byte[] circle = new byte[WINDOW_SIZE];
-        long hash = 0;
-        int circleIndex = 0;
+
         long last = 0;
         long pos = 0;
-
         int bytesRead;
 
         while((bytesRead = in.read(buffer, 0, buffer.length)) > 0) {
             for (int i = 0; i < bytesRead; i++) {
-                hash = mBuzHash.roll(circle[circleIndex], buffer[i]);
-                circle[circleIndex] = buffer[i];
-                circleIndex = ++circleIndex % WINDOW_SIZE;
-
+                byte newByte = buffer[i];
+                long hash = buzHash.addByte(newByte);
+                hasher.putByte(newByte);
                 pos++;
-
-                hasher.putByte(buffer[i]);
 
                 if ((hash & mMask) == 0) {
                     //segment boundery found
@@ -53,9 +47,7 @@ public class DataStreamBreaker {
                     retval.add(segment);
 
                     last = pos;
-                    hash = 0;
-                    Arrays.fill(circle, (byte) 0);
-                    circleIndex = 0;
+                    buzHash.reset();
                     hasher = mSecureHash.newHasher();
                 }
             }

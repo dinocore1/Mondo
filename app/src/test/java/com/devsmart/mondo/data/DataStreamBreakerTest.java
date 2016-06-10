@@ -58,5 +58,31 @@ public class DataStreamBreakerTest {
                 Iterables.toString(segments1),
                 Iterables.toString(segments2)));
 
+
+    }
+
+    @Test
+    public void testInsertPrefix() throws Exception {
+
+        final int numBits = 11;
+        byte[] data = new byte[4*1024];
+
+        Random r = new Random(1);
+        r.nextBytes(data);
+
+        DataStreamBreaker dataBreaker = new DataStreamBreaker(Hashing.md5(), numBits);
+        Iterable<Segment> segments1 = dataBreaker.getSegments(new ByteArrayInputStream(data));
+
+
+        dataBreaker = new DataStreamBreaker(Hashing.md5(), numBits);
+        Iterable<Segment> segments2 = dataBreaker.getSegments(new SequenceInputStream(
+                new ByteArrayInputStream(new byte[]{0x43}),
+                new ByteArrayInputStream(data)));
+
+        System.out.println(String.format("%s\n%s",
+                Iterables.toString(segments1),
+                Iterables.toString(segments2)));
+
+
     }
 }
