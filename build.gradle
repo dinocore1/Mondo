@@ -6,5 +6,6 @@ project.ext.set('reed_solomon', reed_solomon)
 allprojects {
     repositories {
         mavenCentral()
+        jcenter()
     }
 }
