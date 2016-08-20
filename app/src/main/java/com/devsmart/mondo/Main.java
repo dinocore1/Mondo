@@ -23,6 +23,7 @@ public class Main {
     private static final class ConfigFile {
         String username;
         String password;
+        String mount;
 
     }
 
