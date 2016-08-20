@@ -22,10 +22,8 @@ public class VirtualFilesystem implements Closeable {
     private final BTreeMap<Long, DataFile> mDataObjects;
 
 
-    public VirtualFilesystem(File databaseFile) {
-        mDB = DBMaker.fileDB(databaseFile)
-                .transactionEnable()
-                .make();
+    public VirtualFilesystem(DB database) {
+        mDB = database;
 
         mFiles = mDB.treeSet("files")
                 .serializer(new SerializerArrayTuple(Serializer.STRING_DELTA2, Serializer.STRING, FileInfo.SERIALIZER))
@@ -72,7 +70,15 @@ public class VirtualFilesystem implements Closeable {
     }
 
     public Iterable<VirtualFile> getFilesInDir(String filePath) {
-        SortedSet<Object[]> files = mFiles.subSet(new Object[]{filePath}, new Object[]{filePath, null});
+        final int i = filePath.lastIndexOf('/');
+        String dir;
+        if(i >= 0) {
+            dir = filePath.substring(0, i);
+        } else {
+            dir = filePath;
+        }
+
+        SortedSet<Object[]> files = mFiles.subSet(new Object[]{dir}, new Object[]{dir, null});
         return Iterables.transform(files, DB_FILES_TO_VIRTUALFILE);
     }
 
@@ -96,7 +102,7 @@ public class VirtualFilesystem implements Closeable {
         String dir = filePath.substring(0, i);
         String fileName = filePath.substring(i+1, filePath.length());
 
-        Object[] parts = mFiles.floor(new Object[]{dir, fileName});
+        Object[] parts = mFiles.ceiling(new Object[]{dir, fileName});
         if(parts != null) {
             retval = DB_FILES_TO_VIRTUALFILE.apply(parts);
         }

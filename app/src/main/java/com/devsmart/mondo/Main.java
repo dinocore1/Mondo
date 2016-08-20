@@ -6,6 +6,8 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.stream.JsonReader;
 import org.apache.commons.lang3.SystemUtils;
+import org.mapdb.DB;
+import org.mapdb.DBMaker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -43,7 +45,11 @@ public class Main {
             mConfigFile = mGson.fromJson(reader, ConfigFile.class);
 
             mFilesystemStorage = new FilesystemStorage(new File(mRootDir, "data"));
-            mVirtualFilesystem = new VirtualFilesystem(new File(mRootDir, "db"));
+
+            DB db = DBMaker.fileDB(new File(mRootDir, "db"))
+                    .transactionEnable()
+                    .make();
+            mVirtualFilesystem = new VirtualFilesystem(db);
 
             Class<? extends UserspaceFilesystem> userspaceFPClass = null;
             if(SystemUtils.IS_OS_UNIX) {
