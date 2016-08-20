@@ -1,2 +1,4 @@
 include ':libraries:JavaReedSolomon'
+include ':runtime'
+include ':FUSEVirtualFS'
 include ':app'

@@ -4,7 +4,13 @@ def reed_solomon = project(':libraries:JavaReedSolomon')
 project.ext.set('reed_solomon', reed_solomon)
 
 allprojects {
+
+    group = 'com.dev-smart'
+    version = '0.0.1-SNAPSHOT'
+    description = 'P2P Filesystem'
+
     repositories {
+        mavenLocal()
         mavenCentral()
         jcenter()
     }
