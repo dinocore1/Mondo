@@ -47,7 +47,6 @@ public class VirtualFile {
     public void write(ByteBuffer inputBuffer, long size, long offset) {
         Segment newSegment = new Segment(offset, size);
         if(mBufferSegment.contains(newSegment)) {
-            mLiveData.merge(newSegment);
             inputBuffer.get(mBuffer, (int)(offset - mBufferSegment.offset), (int)size);
             mLiveData.merge(newSegment);
 
