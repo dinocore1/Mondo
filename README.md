@@ -7,6 +7,23 @@ you donate some of your harddrive's storage space in exchange for redundant back
 Mondo is in early development and doesn't do anything usefull right now...
 
 
+## Install ##
+
+### Ubuntu ##
+
+`sudo apt-get install fuse`
+
+### Mac OSX ###
+
+Install [FUSE for OSX (a.k.a. OSXFUSE)](https://osxfuse.github.io/)
+
+### Windows ###
+
+TBA... will probablly use [Dokany Project](https://github.com/dokan-dev/dokany)
+
+
+## Techinacal Stuff ##
+
 Rolling Hash:
 http://www.codeproject.com/Articles/801608/Using-a-rolling-hash-to-break-up-binary-files
 
@@ -14,4 +31,3 @@ https://en.wikipedia.org/wiki/Rabin_fingerprint
 
 FUSE Filesystem:
 
-https://github.com/dokan-dev/dokany

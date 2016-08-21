@@ -1,3 +1,5 @@
+apply plugin: 'idea'
+
 
 def reed_solomon = project(':libraries:JavaReedSolomon')
 
