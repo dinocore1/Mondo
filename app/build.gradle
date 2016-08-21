@@ -13,6 +13,11 @@ buildscript {
   }
 }
 
+dependencies {
+  compile project(':runtime')
+  compile project(':FUSEVirtualFS')
+}
+
 jar {
   manifest {
     attributes 'Implementation-Title': 'Mondo',
@@ -21,11 +26,11 @@ jar {
   }
 
   baseName = 'Mondo'
-  from {
-    configurations.compile.collect {
-      it.isDirectory() ? it : zipTree(it)
-    }
-  }
+  //from {
+  //  configurations.compile.collect {
+  //    it.isDirectory() ? it : zipTree(it)
+  //  }
+  //}
 
 }
 
@@ -33,11 +38,8 @@ task proguard(type: proguard.gradle.ProGuardTask) {
   configuration 'proguard.txt'
 
   injars jar.outputs
+  injars files(configurations.compile.collect())
+  //libraryjars files(configurations.compile.collect())
   outjars 'build/libs/mondo-proguard.jar'
   libraryjars "${System.getProperty('java.home')}/lib/rt.jar"
-}
-
-dependencies {
-  compile project(':runtime')
-  compile project(':FUSEVirtualFS')
 }

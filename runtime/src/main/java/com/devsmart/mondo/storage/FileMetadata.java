@@ -17,9 +17,14 @@ public class FileMetadata {
 
     int mFlags;
     long mDataFileId;
+    long mSize;
 
     public boolean isDirectory() {
         return (mFlags & FLAG_DIR) > 0;
+    }
+
+    public long getSize() {
+        return mSize;
     }
 
     static final GroupSerializerObjectArray<FileMetadata> SERIALIZER = new GroupSerializerObjectArray<FileMetadata>() {
@@ -27,6 +32,7 @@ public class FileMetadata {
         @Override
         public void serialize(@NotNull DataOutput2 out, @NotNull FileMetadata value) throws IOException {
             out.packInt(value.mFlags);
+            out.packLong(value.mSize);
             out.packLong(value.mDataFileId);
         }
 
@@ -34,6 +40,7 @@ public class FileMetadata {
         public FileMetadata deserialize(@NotNull DataInput2 input, int available) throws IOException {
             FileMetadata retval = new FileMetadata();
             retval.mFlags = input.unpackInt();
+            retval.mSize = input.unpackLong();
             retval.mDataFileId = input.unpackLong();
             return retval;
         }
@@ -43,5 +50,4 @@ public class FileMetadata {
             return Long.compare(a.mDataFileId, b.mDataFileId);
         }
     };
-
 }

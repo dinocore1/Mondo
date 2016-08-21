@@ -56,6 +56,7 @@ public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
                 stat.mode(TypeMode.S_IFDIR | 0755);
             } else {
                 stat.mode(TypeMode.S_IFREG | 0644);
+                stat.size(file.getSize());
             }
             return 0;
         }

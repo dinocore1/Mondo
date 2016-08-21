@@ -45,7 +45,7 @@ public class VirtualFilesystemTests {
         assertFalse(vfs.pathExists("/word"));
         assertTrue(vfs.pathExists("/test"));
 
-        VirtualFile testDir = vfs.getFile("/test");
+        FileMetadata testDir = vfs.getFile("/test");
         assertNotNull(testDir);
 
         vfs.mkdir("/test/word");

@@ -14,12 +14,13 @@
 -keep class ch.qos.logback.** { *; }
 -keep class org.slf4j.** { *; }
 
--keep class org.apache.commons.** { *; }
+#-keep class org.apache.commons.** { *; }
 
--keep class com.devsmart.mondo.** {
- *;
-}
+#-keep class com.devsmart.mondo.** { *; }
 
--keep class com.devsmart.mondo.MondoNode {
+-keep class net.jpountz.xxhash.** { *; }
+-keep class org.mapdb.** { *; }
+
+-keep class com.devsmart.mondo.Main {
  public static void main(java.lang.String[]);
 }
