@@ -3,8 +3,11 @@ package com.devsmart.mondo.storage;
 
 public class VirtualFile {
 
-    String mName;
-    FileMetadata mMetadata;
+
+    public VirtualFilesystem.Path mPath;
+    public FileMetadata mMetadata;
+    public int mHandle;
+
 
     public boolean isDirectory() {
         return (mMetadata.mFlags & FileMetadata.FLAG_DIR) > 0;
@@ -15,7 +18,7 @@ public class VirtualFile {
     }
 
     public String getName() {
-        return mName;
+        return mPath.getName();
     }
 
 

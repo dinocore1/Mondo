@@ -1,19 +1,16 @@
 package com.devsmart.mondo.data;
 
 
-import co.paralleluniverse.fuse.DirectoryFiller;
-import co.paralleluniverse.fuse.StructFuseFileInfo;
+import co.paralleluniverse.fuse.*;
+import com.devsmart.mondo.storage.FileHandlePool;
 import com.devsmart.mondo.storage.FileMetadata;
 import com.devsmart.mondo.storage.VirtualFile;
 import com.devsmart.mondo.storage.VirtualFilesystem;
-import co.paralleluniverse.fuse.*;
-import co.paralleluniverse.fuse.AbstractFuseFilesystem;
-import com.google.common.base.Function;
-import com.google.common.collect.Iterables;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.ByteBuffer;
+import java.util.HashMap;
 
 public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
 
@@ -21,6 +18,8 @@ public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
 
 
     private final VirtualFilesystem mVirtualFS;
+    private final HashMap<String, VirtualFile> mOpenFiles = new HashMap<String, VirtualFile>();
+    private final FileHandlePool mFileHandles = new FileHandlePool(200);
 
     public FUSEVirtualFilesystem(VirtualFilesystem virtualFilesystem) {
         mVirtualFS = virtualFilesystem;
@@ -86,11 +85,25 @@ public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
     @Override
     protected synchronized int open(String path, StructFuseFileInfo info) {
         LOGGER.info("open {}", path);
-        FileMetadata file = mVirtualFS.getFile(path);
-        if(file == null) {
+        FileMetadata metadata = mVirtualFS.getFile(path);
+        if(metadata == null || metadata.isDirectory()) {
             return -ErrorCodes.ENOENT();
         } else {
-
+            VirtualFile vfile = mOpenFiles.get(path);
+            if(vfile == null) {
+                try {
+                    vfile = new VirtualFile();
+                    vfile.mMetadata = metadata;
+                    vfile.mPath = mVirtualFS.mPathPool.borrowObject();
+                    vfile.mPath.setFilepath(path);
+                    vfile.mHandle = mFileHandles.allocate();
+                    info.fh(vfile.mHandle);
+                    mOpenFiles.put(path, vfile);
+                } catch (Exception e) {
+                    LOGGER.error("", e);
+                    return -ErrorCodes.ENFILE();
+                }
+            }
         }
         return 0;
     }
@@ -98,6 +111,15 @@ public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
     @Override
     protected synchronized int release(String path, StructFuseFileInfo info) {
         LOGGER.info("release {}", path);
+
+        try {
+            VirtualFile vfile = mOpenFiles.remove(path);
+            mVirtualFS.mPathPool.returnObject(vfile.mPath);
+            return 0;
+        } catch (Exception e) {
+            LOGGER.error("", e);
+        }
+
         return 0;
     }
 
