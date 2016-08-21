@@ -3,27 +3,72 @@ package com.devsmart.mondo.storage;
 
 import com.google.common.base.Function;
 import com.google.common.collect.Iterables;
+import org.apache.commons.pool2.BasePooledObjectFactory;
+import org.apache.commons.pool2.ObjectPool;
+import org.apache.commons.pool2.PooledObject;
+import org.apache.commons.pool2.impl.DefaultPooledObject;
+import org.apache.commons.pool2.impl.GenericObjectPool;
 import org.jetbrains.annotations.NotNull;
 import org.mapdb.*;
 import org.mapdb.serializer.GroupSerializerObjectArray;
 import org.mapdb.serializer.SerializerArrayTuple;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.NavigableSet;
 import java.util.SortedSet;
 
 public class VirtualFilesystem implements Closeable {
 
 
+    public static class Path {
+
+        public final char mPathSeperator;
+
+        private String mParent;
+        private String mFilename;
+
+        public Path(char pathSeperator) {
+            mPathSeperator = pathSeperator;
+        }
+
+        public void setFilepath(String filepath) {
+            int i = filepath.lastIndexOf(mPathSeperator);
+            if(i == 0) {
+                mParent = "/";
+            } else {
+                mParent = filepath.substring(0, i);
+            }
+
+            mFilename = filepath.substring(i + 1, filepath.length());
+        }
+
+
+        public String getParent() {
+            return mParent;
+        }
+
+        public String getName() {
+            return mFilename;
+        }
+    }
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(VirtualFilesystem.class);
+
     final DB mDB;
+    final char mPathSeparator;
+    private final ObjectPool<Path> mPathPool;
     private final NavigableSet<Object[]> mFiles;
     private final BTreeMap<Long, DataFile> mDataObjects;
 
 
-    public VirtualFilesystem(DB database) {
+    public VirtualFilesystem(DB database, char pathSeparator) {
         mDB = database;
+        mPathSeparator = pathSeparator;
 
         mFiles = mDB.treeSet("files")
                 .serializer(new SerializerArrayTuple(Serializer.STRING_DELTA2, Serializer.STRING, FileInfo.SERIALIZER))
@@ -35,11 +80,24 @@ public class VirtualFilesystem implements Closeable {
                 .valueSerializer(DataFile.SERIALIZER)
                 .createOrOpen();
 
+        mPathPool = new GenericObjectPool<Path>(new BasePooledObjectFactory<Path>() {
+            @Override
+            public Path create() throws Exception {
+                return new Path(mPathSeparator);
+            }
+
+            @Override
+            public PooledObject<Path> wrap(Path obj) {
+                return new DefaultPooledObject<Path>(obj);
+            }
+        });
+
     }
 
     @Override
     public void close() throws IOException {
         mDB.close();
+        mPathPool.close();
     }
 
     static class FileInfo {
@@ -69,16 +127,8 @@ public class VirtualFilesystem implements Closeable {
         };
     }
 
-    public Iterable<VirtualFile> getFilesInDir(String filePath) {
-        final int i = filePath.lastIndexOf('/');
-        String dir;
-        if(i >= 0) {
-            dir = filePath.substring(0, i);
-        } else {
-            dir = filePath;
-        }
-
-        SortedSet<Object[]> files = mFiles.subSet(new Object[]{dir}, new Object[]{dir, null});
+    public Iterable<VirtualFile> getFilesInDir(String filePathStr) {
+        SortedSet<Object[]> files = mFiles.subSet(new Object[]{filePathStr}, new Object[]{filePathStr, null});
         return Iterables.transform(files, DB_FILES_TO_VIRTUALFILE);
     }
 
@@ -97,42 +147,93 @@ public class VirtualFilesystem implements Closeable {
     };
 
     public VirtualFile getFile(String filePath) {
-        VirtualFile retval = null;
-        final int i = filePath.lastIndexOf('/');
-        String dir = filePath.substring(0, i);
-        String fileName = filePath.substring(i+1, filePath.length());
+        try {
+            Path path = mPathPool.borrowObject();
+            try {
+                path.setFilepath(filePath);
+                String dir = path.getParent();
+                String fileName = path.getName();
 
-        Object[] parts = mFiles.ceiling(new Object[]{dir, fileName});
-        if(parts != null) {
-            retval = DB_FILES_TO_VIRTUALFILE.apply(parts);
+                Object[] parts = mFiles.ceiling(new Object[]{dir, fileName});
+
+                VirtualFile retval = null;
+                if(parts != null) {
+                    retval = DB_FILES_TO_VIRTUALFILE.apply(parts);
+                }
+                return retval;
+
+            } finally {
+                mPathPool.returnObject(path);
+            }
+        } catch (Exception e) {
+            LOGGER.error("", e);
+            return null;
         }
-        return retval;
+
     }
 
     public void mkdir(String filePath) {
-        final int i = filePath.lastIndexOf('/');
-        String dir = filePath.substring(0, i);
-        String fileName = filePath.substring(i+1, filePath.length());
+        try {
+            Path path = mPathPool.borrowObject();
+            try {
+                path.setFilepath(filePath);
 
-        FileInfo info = new FileInfo();
-        info.mBits = VirtualFile.FLAG_DIR;
-        Object[] parts = new Object[]{dir, fileName, info};
-        mFiles.add(parts);
+                String dir = path.getParent();
+                String fileName = path.getName();
+
+                FileInfo info = new FileInfo();
+                info.mBits = VirtualFile.FLAG_DIR;
+                Object[] parts = new Object[]{dir, fileName, info};
+                mFiles.add(parts);
+            } finally {
+                mPathPool.returnObject(path);
+            }
+        } catch (Exception e) {
+            LOGGER.error("", e);
+        }
     }
 
     public void create(String filePath) {
-        final int i = filePath.lastIndexOf('/');
-        String dir = filePath.substring(0, i);
-        String fileName = filePath.substring(i+1, filePath.length());
+        try {
+            Path path = mPathPool.borrowObject();
+            try {
+                path.setFilepath(filePath);
 
-        FileInfo info = new FileInfo();
-        info.mBits = 0;
-        Object[] parts = new Object[]{dir, fileName, info};
-        mFiles.add(parts);
+                String dir = path.getParent();
+                String fileName = path.getName();
+
+                FileInfo info = new FileInfo();
+                info.mBits = 0;
+                Object[] parts = new Object[]{dir, fileName, info};
+                mFiles.add(parts);
+            } finally {
+                mPathPool.returnObject(path);
+            }
+        } catch (Exception e) {
+            LOGGER.error("", e);
+        }
     }
 
     public boolean pathExists(String filePath) {
-        return mFiles.contains(new Object[]{filePath});
+
+        try {
+            Path path = mPathPool.borrowObject();
+            try {
+                path.setFilepath(filePath);
+
+                String dir = path.getParent();
+                String fileName = path.getName();
+
+                return mFiles.ceiling(new Object[]{dir, fileName}) != null;
+            } finally {
+                mPathPool.returnObject(path);
+            }
+        } catch (Exception e) {
+            LOGGER.error("", e);
+            return false;
+        }
+
+
     }
 
 

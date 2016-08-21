@@ -49,10 +49,10 @@ public class Main {
             DB db = DBMaker.fileDB(new File(mRootDir, "db"))
                     .transactionEnable()
                     .make();
-            mVirtualFilesystem = new VirtualFilesystem(db);
 
             Class<? extends UserspaceFilesystem> userspaceFPClass = null;
             if(SystemUtils.IS_OS_UNIX) {
+                mVirtualFilesystem = new VirtualFilesystem(db, '/');
                 userspaceFPClass = (Class<? extends UserspaceFilesystem>) Main.class.getClassLoader().loadClass("com.devsmart.mondo.data.FUSEUserspaceFilesystem");
             }
 
