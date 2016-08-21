@@ -2,6 +2,7 @@ package com.devsmart.mondo.storage;
 
 
 import com.google.common.base.Function;
+import com.google.common.collect.ComparisonChain;
 import com.google.common.collect.Iterables;
 import org.apache.commons.pool2.BasePooledObjectFactory;
 import org.apache.commons.pool2.ObjectPool;
@@ -18,6 +19,7 @@ import org.slf4j.LoggerFactory;
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.file.Path;
 import java.util.NavigableSet;
 import java.util.SortedSet;
@@ -71,7 +73,7 @@ public class VirtualFilesystem implements Closeable {
         mPathSeparator = pathSeparator;
 
         mFiles = mDB.treeSet("files")
-                .serializer(new SerializerArrayTuple(Serializer.STRING_DELTA2, Serializer.STRING, FileInfo.SERIALIZER))
+                .serializer(new SerializerArrayTuple(Serializer.STRING_DELTA2, Serializer.STRING, FileMetadata.SERIALIZER))
                 .createOrOpen();
 
         mDataObjects = mDB.treeMap("data")
@@ -100,53 +102,17 @@ public class VirtualFilesystem implements Closeable {
         mPathPool.close();
     }
 
-    static class FileInfo {
-        int mBits;
-        long mDataFileId;
-
-        static final GroupSerializerObjectArray<FileInfo> SERIALIZER = new GroupSerializerObjectArray<FileInfo>() {
-
-            @Override
-            public void serialize(@NotNull DataOutput2 out, @NotNull FileInfo value) throws IOException {
-                out.packInt(value.mBits);
-                out.packLong(value.mDataFileId);
-            }
-
-            @Override
-            public FileInfo deserialize(@NotNull DataInput2 input, int available) throws IOException {
-                FileInfo retval = new FileInfo();
-                retval.mBits = input.unpackInt();
-                retval.mDataFileId = input.unpackLong();
-                return retval;
-            }
-
-            @Override
-            public int compare(FileInfo a, FileInfo b) {
-                return 0;
-            }
-        };
-    }
-
-    public Iterable<VirtualFile> getFilesInDir(String filePathStr) {
+    public Iterable<String> getFilesInDir(String filePathStr) {
         SortedSet<Object[]> files = mFiles.subSet(new Object[]{filePathStr}, new Object[]{filePathStr, null});
-        return Iterables.transform(files, DB_FILES_TO_VIRTUALFILE);
+        return Iterables.transform(files, new Function<Object[], String>() {
+            @Override
+            public String apply(Object[] input) {
+                return (String) input[1];
+            }
+        });
     }
 
-    private static Function<Object[], VirtualFile> DB_FILES_TO_VIRTUALFILE = new Function<Object[], VirtualFile>() {
-        @Override
-        public VirtualFile apply(Object[] input) {
-            VirtualFile f = new VirtualFile();
-            f.mName = (String) input[1];
-
-            FileInfo info = (FileInfo) input[2];
-            f.mFlags = info.mBits;
-            f.mDataFileId = info.mDataFileId;
-
-            return f;
-        }
-    };
-
-    public VirtualFile getFile(String filePath) {
+    public FileMetadata getFile(String filePath) {
         try {
             Path path = mPathPool.borrowObject();
             try {
@@ -156,9 +122,9 @@ public class VirtualFilesystem implements Closeable {
 
                 Object[] parts = mFiles.ceiling(new Object[]{dir, fileName});
 
-                VirtualFile retval = null;
+                FileMetadata retval = null;
                 if(parts != null) {
-                    retval = DB_FILES_TO_VIRTUALFILE.apply(parts);
+                    retval = (FileMetadata) parts[2];
                 }
                 return retval;
 
@@ -181,8 +147,8 @@ public class VirtualFilesystem implements Closeable {
                 String dir = path.getParent();
                 String fileName = path.getName();
 
-                FileInfo info = new FileInfo();
-                info.mBits = VirtualFile.FLAG_DIR;
+                FileMetadata info = new FileMetadata();
+                info.mFlags = FileMetadata.FLAG_DIR;
                 Object[] parts = new Object[]{dir, fileName, info};
                 mFiles.add(parts);
             } finally {
@@ -193,7 +159,7 @@ public class VirtualFilesystem implements Closeable {
         }
     }
 
-    public void create(String filePath) {
+    public void rmdir(String filePath) {
         try {
             Path path = mPathPool.borrowObject();
             try {
@@ -202,10 +168,59 @@ public class VirtualFilesystem implements Closeable {
                 String dir = path.getParent();
                 String fileName = path.getName();
 
-                FileInfo info = new FileInfo();
-                info.mBits = 0;
+                Object[] parts = mFiles.ceiling(new Object[]{dir, fileName});
+                mFiles.remove(parts);
+
+            } finally {
+                mPathPool.returnObject(path);
+            }
+        } catch (Exception e) {
+            LOGGER.error("", e);
+        }
+    }
+
+    public void mknod(String filePath) {
+        try {
+            Path path = mPathPool.borrowObject();
+            try {
+                path.setFilepath(filePath);
+
+                String dir = path.getParent();
+                String fileName = path.getName();
+
+                FileMetadata info = new FileMetadata();
+                info.mFlags = 0;
                 Object[] parts = new Object[]{dir, fileName, info};
                 mFiles.add(parts);
+            } finally {
+                mPathPool.returnObject(path);
+            }
+        } catch (Exception e) {
+            LOGGER.error("", e);
+        }
+    }
+
+    public int read(String path, ByteBuffer buffer, long bytesAvailable, long offset) {
+        return 0;
+    }
+
+    public int write(String path, ByteBuffer buf, long numBytes, long writeOffset) {
+        return (int) numBytes;
+    }
+
+    public void unlink(String filePath) {
+        try {
+            Path path = mPathPool.borrowObject();
+            try {
+                path.setFilepath(filePath);
+
+                String dir = path.getParent();
+                String fileName = path.getName();
+
+
+                Object[] parts = mFiles.ceiling(new Object[]{dir, fileName});
+                mFiles.remove(parts);
+
             } finally {
                 mPathPool.returnObject(path);
             }
