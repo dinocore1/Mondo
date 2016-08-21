@@ -6,7 +6,6 @@ import com.google.common.hash.Hasher;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.Arrays;
 import java.util.LinkedList;
 
 public class DataStreamBreaker {
@@ -20,9 +19,9 @@ public class DataStreamBreaker {
         mMask = (long) ((1 << numBits) - 1);
     }
 
-    public Iterable<Segment> getSegments(InputStream in) throws IOException {
+    public Iterable<SecureSegment> getSegments(InputStream in) throws IOException {
 
-        LinkedList<Segment> retval = new LinkedList<Segment>();
+        LinkedList<SecureSegment> retval = new LinkedList<SecureSegment>();
 
         Hasher hasher = mSecureHash.newHasher();
 
@@ -43,7 +42,7 @@ public class DataStreamBreaker {
 
                 if ((hash & mMask) == 0) {
                     //segment boundery found
-                    Segment segment = new Segment(last, pos - last, hasher.hash());
+                    SecureSegment segment = new SecureSegment(last, pos - last, hasher.hash());
                     retval.add(segment);
 
                     last = pos;
@@ -54,7 +53,7 @@ public class DataStreamBreaker {
         }
 
         if(pos > last) {
-            Segment segment = new Segment(last, pos - last, hasher.hash());
+            SecureSegment segment = new SecureSegment(last, pos - last, hasher.hash());
             retval.add(segment);
         }
 

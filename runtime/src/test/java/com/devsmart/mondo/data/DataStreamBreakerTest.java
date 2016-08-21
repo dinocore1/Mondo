@@ -2,7 +2,6 @@ package com.devsmart.mondo.data;
 
 
 import com.google.common.collect.Iterables;
-import com.google.common.hash.HashFunction;
 import com.google.common.hash.Hashing;
 import org.junit.Test;
 
@@ -47,12 +46,12 @@ public class DataStreamBreakerTest {
         r.nextBytes(data);
 
         DataStreamBreaker dataBreaker = new DataStreamBreaker(Hashing.md5(), numBits);
-        Iterable<Segment> segments1 = dataBreaker.getSegments(new ByteArrayInputStream(data));
+        Iterable<SecureSegment> segments1 = dataBreaker.getSegments(new ByteArrayInputStream(data));
 
 
         data[49] = 24;
         dataBreaker = new DataStreamBreaker(Hashing.md5(), numBits);
-        Iterable<Segment> segments2 = dataBreaker.getSegments(new ByteArrayInputStream(data));
+        Iterable<SecureSegment> segments2 = dataBreaker.getSegments(new ByteArrayInputStream(data));
 
         System.out.println(String.format("%s\n%s",
                 Iterables.toString(segments1),
@@ -71,11 +70,11 @@ public class DataStreamBreakerTest {
         r.nextBytes(data);
 
         DataStreamBreaker dataBreaker = new DataStreamBreaker(Hashing.md5(), numBits);
-        Iterable<Segment> segments1 = dataBreaker.getSegments(new ByteArrayInputStream(data));
+        Iterable<SecureSegment> segments1 = dataBreaker.getSegments(new ByteArrayInputStream(data));
 
 
         dataBreaker = new DataStreamBreaker(Hashing.md5(), numBits);
-        Iterable<Segment> segments2 = dataBreaker.getSegments(new SequenceInputStream(
+        Iterable<SecureSegment> segments2 = dataBreaker.getSegments(new SequenceInputStream(
                 new ByteArrayInputStream(new byte[]{0x43}),
                 new ByteArrayInputStream(data)));
 

@@ -65,7 +65,7 @@ public class VirtualFilesystem implements Closeable {
     final char mPathSeparator;
     public final ObjectPool<Path> mPathPool;
     private final NavigableSet<Object[]> mFiles;
-    private final BTreeMap<Long, DataFile> mDataObjects;
+    public final BTreeMap<Long, DataFile> mDataObjects;
 
 
     public VirtualFilesystem(DB database, char pathSeparator) {
@@ -202,25 +202,25 @@ public class VirtualFilesystem implements Closeable {
 
     /**
      *
-     * @param path
+     * @param file
      * @param buffer
      * @param bytesAvailable
      * @param offset
      * @return num bytes read
      */
-    public int read(String path, ByteBuffer buffer, long bytesAvailable, long offset) {
+    public int read(VirtualFile file, ByteBuffer buffer, long bytesAvailable, long offset) {
         return 0;
     }
 
     /**
      *
-     * @param path
+     * @param file
      * @param buf
      * @param numBytes
      * @param writeOffset
      * @return num bytes written
      */
-    public int write(String path, ByteBuffer buf, long numBytes, long writeOffset) {
+    public int write(VirtualFile file, ByteBuffer buf, long numBytes, long writeOffset) {
         return (int) numBytes;
     }
 

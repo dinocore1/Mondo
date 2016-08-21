@@ -94,6 +94,7 @@ public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
                 try {
                     vfile = new VirtualFile();
                     vfile.mMetadata = metadata;
+                    vfile.mDatafile = mVirtualFS.mDataObjects.get(vfile.mMetadata.mDataFileId);
                     vfile.mPath = mVirtualFS.mPathPool.borrowObject();
                     vfile.mPath.setFilepath(path);
                     vfile.mHandle = mFileHandles.allocate();
@@ -126,15 +127,22 @@ public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
     @Override
     protected int write(String path, ByteBuffer buf, long bufSize, long writeOffset, StructFuseFileInfo wrapper) {
         LOGGER.info("write {} {} {}", path, bufSize, writeOffset);
-        int bytesWritten = mVirtualFS.write(path, buf, bufSize, writeOffset);
+        VirtualFile vfile = mOpenFiles.get(path);
+        if(vfile == null) {
+            return -ErrorCodes.ENOENT();
+        }
+        int bytesWritten = mVirtualFS.write(vfile, buf, bufSize, writeOffset);
         return bytesWritten;
     }
 
     @Override
     protected int read(String path, ByteBuffer buffer, long size, long offset, StructFuseFileInfo info) {
         LOGGER.info("read {} {} {}", path, size, offset);
-
-        int bytesRead = mVirtualFS.read(path, buffer, size, offset);
+        VirtualFile vfile = mOpenFiles.get(path);
+        if(vfile == null) {
+            return -ErrorCodes.ENOENT();
+        }
+        int bytesRead = mVirtualFS.read(vfile, buffer, size, offset);
         return bytesRead;
     }
 
