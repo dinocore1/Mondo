@@ -1,6 +1,7 @@
 package com.devsmart.mondo.storage;
 
 
+import com.google.common.hash.HashCode;
 import org.jetbrains.annotations.NotNull;
 import org.mapdb.DataInput2;
 import org.mapdb.DataOutput2;
@@ -23,6 +24,10 @@ public class FilePart {
 
     public long getSize() {
         return mSize;
+    }
+
+    public HashCode getSha1Checksum() {
+        return HashCode.fromBytes(mSha1Checksum);
     }
 
     @Override

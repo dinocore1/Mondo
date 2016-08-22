@@ -2,13 +2,11 @@ package com.devsmart.mondo.data;
 
 
 import co.paralleluniverse.fuse.*;
-import com.devsmart.mondo.storage.FileHandlePool;
-import com.devsmart.mondo.storage.FileMetadata;
-import com.devsmart.mondo.storage.VirtualFile;
-import com.devsmart.mondo.storage.VirtualFilesystem;
+import com.devsmart.mondo.storage.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.HashMap;
 
@@ -20,9 +18,11 @@ public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
     private final VirtualFilesystem mVirtualFS;
     private final HashMap<String, VirtualFile> mOpenFiles = new HashMap<String, VirtualFile>();
     private final FileHandlePool mFileHandles = new FileHandlePool(200);
+    private final FilesystemStorage mFilesystemStorage;
 
-    public FUSEVirtualFilesystem(VirtualFilesystem virtualFilesystem) {
+    public FUSEVirtualFilesystem(VirtualFilesystem virtualFilesystem, FilesystemStorage storage) {
         mVirtualFS = virtualFilesystem;
+        mFilesystemStorage = storage;
     }
 
     @Override
@@ -47,15 +47,20 @@ public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
             return 0;
         }
 
-        FileMetadata file = mVirtualFS.getFile(path);
-        if(file == null) {
+        FileMetadata metadata = mVirtualFS.getFile(path);
+        if(metadata == null) {
             return -ErrorCodes.ENOENT();
         } else {
-            if(file.isDirectory()) {
+            if(metadata.isDirectory()) {
                 stat.mode(TypeMode.S_IFDIR | 0755);
             } else {
                 stat.mode(TypeMode.S_IFREG | 0644);
-                stat.size(file.getSize());
+                VirtualFile vfile = mOpenFiles.get(path);
+                if(vfile != null) {
+                    stat.size(vfile.getSize());
+                } else {
+                    stat.size(metadata.getSize());
+                }
             }
             return 0;
         }
@@ -92,9 +97,9 @@ public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
             VirtualFile vfile = mOpenFiles.get(path);
             if(vfile == null) {
                 try {
-                    vfile = new VirtualFile();
+                    vfile = new VirtualFile(mFilesystemStorage);
                     vfile.mMetadata = metadata;
-                    vfile.mDatafile = mVirtualFS.mDataObjects.get(vfile.mMetadata.mDataFileId);
+                    vfile.setDataFile(mVirtualFS.mDataObjects.get(vfile.mMetadata.mDataFileId));
                     vfile.mPath = mVirtualFS.mPathPool.borrowObject();
                     vfile.mPath.setFilepath(path);
                     vfile.mHandle = mFileHandles.allocate();
@@ -114,14 +119,18 @@ public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
         LOGGER.info("release {}", path);
 
         try {
-            VirtualFile vfile = mOpenFiles.remove(path);
-            mVirtualFS.mPathPool.returnObject(vfile.mPath);
+            VirtualFile vfile = mOpenFiles.get(path);
+            addToFlushQueue(vfile);
             return 0;
         } catch (Exception e) {
             LOGGER.error("", e);
         }
 
         return 0;
+    }
+
+    private void addToFlushQueue(VirtualFile vfile) {
+
     }
 
     @Override
@@ -131,8 +140,13 @@ public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
         if(vfile == null) {
             return -ErrorCodes.ENOENT();
         }
-        int bytesWritten = mVirtualFS.write(vfile, buf, bufSize, writeOffset);
-        return bytesWritten;
+        try {
+            int bytesWritten = vfile.write(buf, bufSize, writeOffset);
+            return bytesWritten;
+        } catch (Exception e) {
+            LOGGER.error("", e);
+            return 0;
+        }
     }
 
     @Override
@@ -142,8 +156,13 @@ public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
         if(vfile == null) {
             return -ErrorCodes.ENOENT();
         }
-        int bytesRead = mVirtualFS.read(vfile, buffer, size, offset);
-        return bytesRead;
+        try {
+            int bytesRead = vfile.read(buffer, size, offset);
+            return bytesRead;
+        } catch (Exception e) {
+            LOGGER.error("", e);
+            return 0;
+        }
     }
 
     @Override

@@ -14,6 +14,16 @@ public class SegmentList {
 
     private TreeSet<Segment> mSegments = new TreeSet<Segment>(COMPARATOR);
 
+    public SegmentList() {
+
+    }
+
+    public SegmentList(Iterable<? extends Segment> segments) {
+        for(Segment s : segments) {
+            mSegments.add(s);
+        }
+    }
+
     public synchronized void merge(Segment s) {
         if(mSegments.isEmpty()) {
             mSegments.add(s);
@@ -31,7 +41,26 @@ public class SegmentList {
         }
     }
 
-    Set<Segment> getSegments() {
+    public Set<Segment> getSegments() {
         return Collections.unmodifiableSet(mSegments);
+    }
+
+    public Segment getContainer(Segment s) {
+        for(Segment existingSegment : mSegments) {
+            if(existingSegment.intersects(s)) {
+                long end = Math.min(existingSegment.end(), s.end());
+                return new Segment(s.offset, end - s.offset);
+
+            }
+        }
+        return null;
+    }
+
+    public long end() {
+        if(mSegments.isEmpty()) {
+            return 0;
+        } else {
+            return mSegments.last().end();
+        }
     }
 }

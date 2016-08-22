@@ -18,7 +18,7 @@ public class FUSEUserspaceFilesystem implements UserspaceFilesystem {
 
     @Override
     public void init(VirtualFilesystem virtualFilesystem, FilesystemStorage storage) {
-        mFUSEVirtualFS = new FUSEVirtualFilesystem(virtualFilesystem);
+        mFUSEVirtualFS = new FUSEVirtualFilesystem(virtualFilesystem, storage);
     }
 
     @Override

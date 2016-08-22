@@ -23,8 +23,13 @@ public class FilesystemStorage {
         mTempDir.mkdirs();
     }
 
+    public File createTempFile() throws IOException {
+        File tempFile = File.createTempFile("baking", ".dat", mTempDir);
+        return tempFile;
+    }
+
     public ID store(InputStream in) throws IOException {
-        File tempFile = File.createTempFile("", ".dat", mTempDir);
+        File tempFile = File.createTempFile("baking", ".dat", mTempDir);
         Hasher hasher = HASH_FUNCTION.newHasher();
 
         FileOutputStream fout = new FileOutputStream(tempFile);
