@@ -3,7 +3,7 @@ package com.devsmart.mondo.data;
 
 import java.util.*;
 
-public class SegmentList {
+public class SegmentList implements Iterable<Segment> {
 
     private static final Comparator<Segment> COMPARATOR = new Comparator<Segment>() {
         @Override
@@ -12,7 +12,7 @@ public class SegmentList {
         }
     };
 
-    private TreeSet<Segment> mSegments = new TreeSet<Segment>(COMPARATOR);
+    private LinkedList<Segment> mSegments = new LinkedList<Segment>();
 
     public SegmentList() {
 
@@ -22,6 +22,15 @@ public class SegmentList {
         for(Segment s : segments) {
             mSegments.add(s);
         }
+    }
+
+    public int size() {
+        return mSegments.size();
+    }
+
+    @Override
+    public Iterator<Segment> iterator() {
+        return mSegments.iterator();
     }
 
     public synchronized void merge(Segment s) {
@@ -41,8 +50,8 @@ public class SegmentList {
         }
     }
 
-    public Set<Segment> getSegments() {
-        return Collections.unmodifiableSet(mSegments);
+    public Iterable<Segment> getSegments() {
+        return Collections.unmodifiableList(mSegments);
     }
 
     public Segment getContainer(Segment s) {
@@ -60,7 +69,23 @@ public class SegmentList {
         if(mSegments.isEmpty()) {
             return 0;
         } else {
-            return mSegments.last().end();
+            return mSegments.getLast().end();
         }
+    }
+
+    public void truncate(long size) {
+        ListIterator<Segment> it = mSegments.listIterator();
+        while(it.hasNext()) {
+            Segment s = it.next();
+            if(s.offset >= size) {
+                it.remove();
+            } else if(s.end() > size) {
+                it.set(new Segment(s.offset, s.end() - size));
+            }
+        }
+    }
+
+    public void clear() {
+        mSegments.clear();
     }
 }

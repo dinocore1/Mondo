@@ -8,7 +8,9 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedList;
 
 public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
 
@@ -19,10 +21,18 @@ public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
     private final HashMap<String, VirtualFile> mOpenFiles = new HashMap<String, VirtualFile>();
     private final FileHandlePool mFileHandles = new FileHandlePool(200);
     private final FilesystemStorage mFilesystemStorage;
+    private final LinkedList<VirtualFile> mFlushQueue = new LinkedList<VirtualFile>();
 
     public FUSEVirtualFilesystem(VirtualFilesystem virtualFilesystem, FilesystemStorage storage) {
         mVirtualFS = virtualFilesystem;
         mFilesystemStorage = storage;
+    }
+
+    private void addToFlushQueue(VirtualFile vfile) {
+        synchronized(mFlushQueue) {
+            mFlushQueue.offer(vfile);
+            mFlushQueue.notify();
+        }
     }
 
     @Override
@@ -129,10 +139,6 @@ public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
         return 0;
     }
 
-    private void addToFlushQueue(VirtualFile vfile) {
-
-    }
-
     @Override
     protected int write(String path, ByteBuffer buf, long bufSize, long writeOffset, StructFuseFileInfo wrapper) {
         LOGGER.info("write {} {} {}", path, bufSize, writeOffset);
@@ -163,6 +169,17 @@ public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
             LOGGER.error("", e);
             return 0;
         }
+    }
+
+    @Override
+    protected int truncate(String path, long size) {
+        LOGGER.info("truncate {} {}", path, size);
+        VirtualFile vfile = mOpenFiles.get(path);
+        if(vfile == null) {
+            return -ErrorCodes.ENOENT();
+        }
+        vfile.truncate(size);
+        return 0;
     }
 
     @Override
