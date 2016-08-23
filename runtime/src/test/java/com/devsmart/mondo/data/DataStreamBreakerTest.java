@@ -3,12 +3,14 @@ package com.devsmart.mondo.data;
 
 import com.google.common.collect.Iterables;
 import com.google.common.hash.Hashing;
+import org.apache.commons.math3.stat.descriptive.SummaryStatistics;
 import org.junit.Test;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.SequenceInputStream;
+import java.util.IntSummaryStatistics;
 import java.util.Random;
 
 public class DataStreamBreakerTest {
@@ -33,6 +35,27 @@ public class DataStreamBreakerTest {
                 return mRandom.nextInt(256);
             }
         }
+    }
+
+    @Test
+    public void testStats() throws Exception {
+
+        RandomInputStream stream = new RandomInputStream(new Random(1), 100 * 1024*1024);
+        DataStreamBreaker dataBreaker = new DataStreamBreaker(Hashing.md5(), 16);
+
+
+        SummaryStatistics stats = new SummaryStatistics();
+
+        for(SecureSegment s : dataBreaker.getSegments(stream)){
+            System.out.println("l: " + s.length);
+            stats.addValue(s.length);
+        }
+
+        System.out.println(String.format("num segments: %d avg len: %f stddiv: %f min: %g max: %g",
+                stats.getN(), stats.getMean(), stats.getStandardDeviation(), stats.getMin(), stats.getMax()));
+
+
+
     }
 
 

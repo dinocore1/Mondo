@@ -74,8 +74,17 @@ public class VirtualFile implements Closeable {
 
     public synchronized void fsync() throws IOException {
 
+
+        /*
+            create overlay stream
+            pump the overlay stream while running buzhash to break it up into new segments
+            write out new segments
+         */
+
+
         for(Segment s : mTransientSegments) {
 
+            mStoredSegments.getContainer(s);
         }
 
     }
