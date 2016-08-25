@@ -13,10 +13,18 @@ public class DataStreamBreaker {
     private static final int WINDOW_SIZE = 50;
     private final HashFunction mSecureHash;
     private final long mMask;
+    private final int mMinSize;
+    private final int mMaxSize;
 
     public DataStreamBreaker(HashFunction secureHash, int numBits) {
+        this(secureHash, numBits, 0, Integer.MAX_VALUE);
+    }
+
+    public DataStreamBreaker(HashFunction secureHash, int numBits, int minSize, int maxSize) {
         mSecureHash = secureHash;
         mMask = (long) ((1 << numBits) - 1);
+        mMinSize = minSize;
+        mMaxSize = maxSize;
     }
 
     public Iterable<SecureSegment> getSegments(InputStream in) throws IOException {
@@ -40,9 +48,10 @@ public class DataStreamBreaker {
                 hasher.putByte(newByte);
                 pos++;
 
-                if ((hash & mMask) == 0) {
+                final long length = pos - last;
+                if (length >= mMaxSize || ((hash & mMask) == 0 && length >= mMinSize)) {
                     //segment boundery found
-                    SecureSegment segment = new SecureSegment(last, pos - last, hasher.hash());
+                    SecureSegment segment = new SecureSegment(last, length, hasher.hash());
                     retval.add(segment);
 
                     last = pos;

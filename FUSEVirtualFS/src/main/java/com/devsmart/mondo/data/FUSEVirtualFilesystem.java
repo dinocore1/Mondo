@@ -178,8 +178,13 @@ public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
         if(vfile == null) {
             return -ErrorCodes.ENOENT();
         }
-        vfile.truncate(size);
-        return 0;
+        try {
+            vfile.truncate(size);
+            return 0;
+        } catch (IOException e) {
+            LOGGER.error("", e);
+            return 0;
+        }
     }
 
     @Override
