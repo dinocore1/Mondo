@@ -16,7 +16,7 @@ public class FileMetadata {
     public static final int FLAG_READ = 0x4;
 
     public int mFlags;
-    public long mDataFileId;
+    public long mDataFileId = -1;
     public long mSize;
 
     public boolean isDirectory() {

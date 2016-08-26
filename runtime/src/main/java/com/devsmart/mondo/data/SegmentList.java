@@ -65,6 +65,26 @@ public class SegmentList implements Iterable<Segment> {
         return null;
     }
 
+    public boolean contains(long offset) {
+        for(Segment existingSegment : mSegments) {
+            if(existingSegment.contains(offset)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public Segment getSegment(long offset) {
+        for(Segment existingSegment : mSegments) {
+            if(existingSegment.contains(offset)) {
+                return existingSegment;
+            }
+        }
+
+        return null;
+    }
+
     public long end() {
         if(mSegments.isEmpty()) {
             return 0;
@@ -87,5 +107,9 @@ public class SegmentList implements Iterable<Segment> {
 
     public void clear() {
         mSegments.clear();
+    }
+
+    public boolean isEmpty() {
+        return mSegments.isEmpty();
     }
 }

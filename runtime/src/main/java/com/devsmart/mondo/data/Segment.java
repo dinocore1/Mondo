@@ -24,10 +24,6 @@ public class Segment {
         }
     }
 
-    public boolean contains(Segment s) {
-        return offset <= s.offset && end() >= s.end();
-    }
-
     public long end() {
         return offset + length;
     }
@@ -62,5 +58,13 @@ public class Segment {
     @Override
     public String toString() {
         return String.format("[%d-%d]", offset, end());
+    }
+
+    public boolean contains(long pos) {
+        return offset <= pos && pos < end();
+    }
+
+    public boolean contains(Segment s) {
+        return contains(s.offset);
     }
 }

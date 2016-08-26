@@ -3,14 +3,18 @@ package com.devsmart.mondo.data;
 
 import co.paralleluniverse.fuse.*;
 import com.devsmart.mondo.storage.*;
+import com.google.common.base.Preconditions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedList;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
 
@@ -22,13 +26,44 @@ public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
     private final FileHandlePool mFileHandles = new FileHandlePool(200);
     private final FilesystemStorage mFilesystemStorage;
     private final LinkedList<VirtualFile> mFlushQueue = new LinkedList<VirtualFile>();
+    private final ScheduledExecutorService mScheduledIO = Executors.newScheduledThreadPool(3);
+    private final ScheduledFuture<?> mFlushTask;
+
+    public void shutdown() {
+        mFlushTask.cancel(false);
+        mScheduledIO.shutdown();
+        mFlushJob.run();
+    }
+
+    private final Runnable mFlushJob = new Runnable() {
+
+        private VirtualFile dequeue() {
+            synchronized (mFlushQueue) {
+                return mFlushQueue.poll();
+            }
+        }
+
+        @Override
+        public void run() {
+            VirtualFile f;
+            while((f = dequeue()) != null) {
+                try {
+                    f.close();
+                } catch (Exception e) {
+                    LOGGER.error("", e);
+                }
+            }
+        }
+    };
 
     public FUSEVirtualFilesystem(VirtualFilesystem virtualFilesystem, FilesystemStorage storage) {
         mVirtualFS = virtualFilesystem;
         mFilesystemStorage = storage;
+        mFlushTask = mScheduledIO.scheduleAtFixedRate(mFlushJob, 10, 10, TimeUnit.SECONDS);
     }
 
     private void addToFlushQueue(VirtualFile vfile) {
+        Preconditions.checkArgument(vfile != null);
         synchronized(mFlushQueue) {
             mFlushQueue.offer(vfile);
             mFlushQueue.notify();
@@ -107,7 +142,7 @@ public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
             VirtualFile vfile = mOpenFiles.get(path);
             if(vfile == null) {
                 try {
-                    vfile = new VirtualFile(mFilesystemStorage);
+                    vfile = new VirtualFile(mVirtualFS, mFilesystemStorage);
                     vfile.mMetadata = metadata;
                     vfile.setDataFile(mVirtualFS.mDataObjects.get(vfile.mMetadata.mDataFileId));
                     vfile.mPath = mVirtualFS.mPathPool.borrowObject();
@@ -129,7 +164,7 @@ public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
         LOGGER.info("release {}", path);
 
         try {
-            VirtualFile vfile = mOpenFiles.get(path);
+            VirtualFile vfile = mOpenFiles.remove(path);
             addToFlushQueue(vfile);
             return 0;
         } catch (Exception e) {
@@ -140,7 +175,7 @@ public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
     }
 
     @Override
-    protected int write(String path, ByteBuffer buf, long bufSize, long writeOffset, StructFuseFileInfo wrapper) {
+    protected synchronized int write(String path, ByteBuffer buf, long bufSize, long writeOffset, StructFuseFileInfo wrapper) {
         LOGGER.info("write {} {} {}", path, bufSize, writeOffset);
         VirtualFile vfile = mOpenFiles.get(path);
         if(vfile == null) {
@@ -156,14 +191,25 @@ public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
     }
 
     @Override
-    protected int read(String path, ByteBuffer buffer, long size, long offset, StructFuseFileInfo info) {
-        LOGGER.info("read {} {} {}", path, size, offset);
+    protected synchronized int read(String path, ByteBuffer buffer, long size, long offset, StructFuseFileInfo info) {
+        LOGGER.info("read {} {} {}", path, offset, size);
         VirtualFile vfile = mOpenFiles.get(path);
         if(vfile == null) {
             return -ErrorCodes.ENOENT();
         }
         try {
             int bytesRead = vfile.read(buffer, size, offset);
+            if(bytesRead > 0) {
+                while(bytesRead < size) {
+                    int r = vfile.read(buffer, size - bytesRead, offset + bytesRead);
+                    if (r <= 0) {
+                        break;
+                    } else {
+                        bytesRead += r;
+                    }
+                }
+            }
+
             return bytesRead;
         } catch (Exception e) {
             LOGGER.error("", e);
@@ -172,7 +218,7 @@ public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
     }
 
     @Override
-    protected int truncate(String path, long size) {
+    protected synchronized int truncate(String path, long size) {
         LOGGER.info("truncate {} {}", path, size);
         VirtualFile vfile = mOpenFiles.get(path);
         if(vfile == null) {

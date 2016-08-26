@@ -2,16 +2,15 @@ package com.devsmart.mondo.data;
 
 
 import com.google.common.collect.Iterables;
+import com.google.common.collect.Sets;
 import com.google.common.hash.Hashing;
 import org.apache.commons.math3.stat.descriptive.SummaryStatistics;
 import org.junit.Test;
 
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.SequenceInputStream;
+import java.io.*;
 import java.util.IntSummaryStatistics;
 import java.util.Random;
+import java.util.Set;
 
 public class DataStreamBreakerTest {
 
@@ -54,6 +53,50 @@ public class DataStreamBreakerTest {
         System.out.println(String.format("num segments: %d avg len: %f stddiv: %f min: %g max: %g",
                 stats.getN(), stats.getMean(), stats.getStandardDeviation(), stats.getMin(), stats.getMax()));
 
+
+
+    }
+
+    @Test
+    public void testFindCommonSegments() throws Exception {
+
+        //DataStreamBreaker dataBreaker = new DataStreamBreaker(Hashing.md5(), 16, 30*1024, 90*1024);
+        DataStreamBreaker dataBreaker = new DataStreamBreaker(Hashing.md5(), 14);
+
+        Set<SecureSegment> d1Segments;
+        Set<SecureSegment> d2Segments;
+        {
+            FileInputStream d1 = new FileInputStream(new File("data/121.apk"));
+            d1Segments = Sets.newHashSet(dataBreaker.getSegments(d1));
+            d1.close();
+
+            SummaryStatistics stats = new SummaryStatistics();
+            for(SecureSegment s : d1Segments) {
+                stats.addValue(s.length);
+            }
+            System.out.println(String.format("num segments: %d avg len: %f stddiv: %f min: %10d max: %10d",
+                    stats.getN(), stats.getMean(), stats.getStandardDeviation(), (long)stats.getMin(), (long)stats.getMax()));
+        }
+        {
+            FileInputStream d1 = new FileInputStream(new File("data/123.apk"));
+            d2Segments = Sets.newHashSet(dataBreaker.getSegments(d1));
+            d1.close();
+
+            SummaryStatistics stats = new SummaryStatistics();
+            for(SecureSegment s : d2Segments) {
+                stats.addValue(s.length);
+            }
+            System.out.println(String.format("num segments: %d avg len: %f stddiv: %f min: %10d max: %10d",
+                    stats.getN(), stats.getMean(), stats.getStandardDeviation(), (long)stats.getMin(), (long)stats.getMax()));
+        }
+
+        Sets.SetView<SecureSegment> commonSegments = Sets.intersection(d1Segments, d2Segments);
+        long totalCommonBytes = 0;
+        for(SecureSegment s : commonSegments) {
+            totalCommonBytes += s.length;
+        }
+        System.out.println(String.format("common segments found: %d common bytes: %d",
+                commonSegments.size(), totalCommonBytes));
 
 
     }

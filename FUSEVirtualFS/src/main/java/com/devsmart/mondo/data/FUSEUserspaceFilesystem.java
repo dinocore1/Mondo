@@ -30,6 +30,7 @@ public class FUSEUserspaceFilesystem implements UserspaceFilesystem {
 
     @Override
     public void unmount() throws IOException {
+        mFUSEVirtualFS.shutdown();
         Fuse.unmount(Paths.get(mMountPath.getAbsolutePath()));
     }
 }

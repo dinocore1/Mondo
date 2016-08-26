@@ -1,17 +1,25 @@
 package com.devsmart.mondo.data;
 
 
+import com.devsmart.mondo.kademlia.ID;
 import com.google.common.hash.HashCode;
 
 public class SecureSegment extends Segment {
 
     public final HashCode secureHash;
+    private transient ID mCachedID;
 
     public SecureSegment(long offset, long length, HashCode secureHash) {
         super(offset, length);
         this.secureHash = secureHash;
     }
 
+    public ID getID() {
+        if(mCachedID == null) {
+            mCachedID = new ID(secureHash.asBytes(), 0);
+        }
+        return mCachedID;
+    }
 
     @Override
     public int hashCode() {

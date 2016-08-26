@@ -8,30 +8,15 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.LinkedList;
 
-public class DataStreamBreaker {
-
-    public interface Callback {
-        void onNewSegment(Segment segment);
-    }
+public class LogDataStreamBreaker {
 
     private static final int WINDOW_SIZE = 50;
     private final HashFunction mSecureHash;
-    private final long mMask;
-    private Callback mCallback;
+    private final int mNumBitsTarget;
 
-    public DataStreamBreaker(HashFunction secureHash, int numBits) {
+    public LogDataStreamBreaker(HashFunction secureHash, int numBits) {
         mSecureHash = secureHash;
-        mMask = (1 << numBits) - 1;
-    }
-
-    public void setCallback(Callback cb) {
-        mCallback = cb;
-    }
-
-    private void newSegment(Segment s) {
-        if(mCallback != null) {
-            mCallback.onNewSegment(s);
-        }
+        mNumBitsTarget = numBits;
     }
 
     public Iterable<SecureSegment> getSegments(InputStream in) throws IOException {
@@ -56,10 +41,11 @@ public class DataStreamBreaker {
                 pos++;
 
                 final long length = pos - last;
-                if ((hash & mMask) == 0) {
+                final int numBitsNeeded = (Long.SIZE - Long.numberOfLeadingZeros(Math.max(1, (1 << mNumBitsTarget) - length)));
+                final long mask = (long) ((1 << numBitsNeeded) -1);
+                if ((hash & mask) == 0) {
                     //segment boundery found
                     SecureSegment segment = new SecureSegment(last, length, hasher.hash());
-                    newSegment(segment);
                     retval.add(segment);
 
                     last = pos;
@@ -71,7 +57,6 @@ public class DataStreamBreaker {
 
         if(pos > last) {
             SecureSegment segment = new SecureSegment(last, pos - last, hasher.hash());
-            newSegment(segment);
             retval.add(segment);
         }
 

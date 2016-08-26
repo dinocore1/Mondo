@@ -21,6 +21,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.file.Path;
+import java.util.Map;
 import java.util.NavigableSet;
 import java.util.SortedSet;
 
@@ -64,22 +65,27 @@ public class VirtualFilesystem implements Closeable {
     final DB mDB;
     final char mPathSeparator;
     public final ObjectPool<Path> mPathPool;
-    private final NavigableSet<Object[]> mFiles;
+    private final BTreeMap<Object[], FileMetadata> mFiles;
     public final BTreeMap<Long, DataFile> mDataObjects;
+    private final Atomic.Long mDataFileId;
 
 
     public VirtualFilesystem(DB database, char pathSeparator) {
         mDB = database;
         mPathSeparator = pathSeparator;
 
-        mFiles = mDB.treeSet("files")
-                .serializer(new SerializerArrayTuple(Serializer.STRING_DELTA2, Serializer.STRING, FileMetadata.SERIALIZER))
+        mFiles = mDB.treeMap("files")
+                .keySerializer(new SerializerArrayTuple(Serializer.STRING_DELTA2, Serializer.STRING))
+                .valueSerializer(FileMetadata.SERIALIZER)
                 .createOrOpen();
 
         mDataObjects = mDB.treeMap("data")
                 .valuesOutsideNodesEnable()
                 .keySerializer(Serializer.LONG)
                 .valueSerializer(DataFile.SERIALIZER)
+                .createOrOpen();
+
+        mDataFileId = mDB.atomicLong("dataFileId")
                 .createOrOpen();
 
         mPathPool = new GenericObjectPool<Path>(new BasePooledObjectFactory<Path>() {
@@ -96,6 +102,20 @@ public class VirtualFilesystem implements Closeable {
 
     }
 
+    public synchronized void writeBack(VirtualFile virtualFile) {
+        FileMetadata metadata = getFile(virtualFile.mPath);
+        metadata.mSize = virtualFile.getSize();
+
+        if(metadata.mDataFileId == -1) {
+            metadata.mDataFileId = mDataFileId.incrementAndGet();
+        }
+
+        mFiles.put(new Object[]{ virtualFile.mPath.getParent(), virtualFile.mPath.getName()}, metadata);
+        mDataObjects.put(metadata.mDataFileId, virtualFile.getDataFile());
+
+        mDB.commit();
+    }
+
     @Override
     public void close() throws IOException {
         mDB.close();
@@ -103,8 +123,8 @@ public class VirtualFilesystem implements Closeable {
     }
 
     public Iterable<String> getFilesInDir(String filePathStr) {
-        SortedSet<Object[]> files = mFiles.subSet(new Object[]{filePathStr}, new Object[]{filePathStr, null});
-        return Iterables.transform(files, new Function<Object[], String>() {
+        Map<Object[], FileMetadata> files = mFiles.prefixSubMap(new Object[]{filePathStr});
+        return Iterables.transform(files.keySet(), new Function<Object[], String>() {
             @Override
             public String apply(Object[] input) {
                 return (String) input[1];
@@ -112,22 +132,19 @@ public class VirtualFilesystem implements Closeable {
         });
     }
 
+    public synchronized FileMetadata getFile(Path path) {
+        String dir = path.getParent();
+        String fileName = path.getName();
+        FileMetadata retval = mFiles.get(new Object[]{dir, fileName});
+        return retval;
+    }
+
     public FileMetadata getFile(String filePath) {
         try {
             Path path = mPathPool.borrowObject();
             try {
                 path.setFilepath(filePath);
-                String dir = path.getParent();
-                String fileName = path.getName();
-
-                Object[] parts = mFiles.ceiling(new Object[]{dir, fileName});
-
-                FileMetadata retval = null;
-                if(parts != null) {
-                    retval = (FileMetadata) parts[2];
-                }
-                return retval;
-
+                return getFile(path);
             } finally {
                 mPathPool.returnObject(path);
             }
@@ -138,7 +155,7 @@ public class VirtualFilesystem implements Closeable {
 
     }
 
-    public void mkdir(String filePath) {
+    public synchronized void mkdir(String filePath) {
         try {
             Path path = mPathPool.borrowObject();
             try {
@@ -149,8 +166,8 @@ public class VirtualFilesystem implements Closeable {
 
                 FileMetadata info = new FileMetadata();
                 info.mFlags = FileMetadata.FLAG_DIR;
-                Object[] parts = new Object[]{dir, fileName, info};
-                mFiles.add(parts);
+                Object[] key = new Object[]{dir, fileName};
+                mFiles.put(key, info);
             } finally {
                 mPathPool.returnObject(path);
             }
@@ -159,7 +176,7 @@ public class VirtualFilesystem implements Closeable {
         }
     }
 
-    public void rmdir(String filePath) {
+    public synchronized void rmdir(String filePath) {
         try {
             Path path = mPathPool.borrowObject();
             try {
@@ -168,8 +185,7 @@ public class VirtualFilesystem implements Closeable {
                 String dir = path.getParent();
                 String fileName = path.getName();
 
-                Object[] parts = mFiles.ceiling(new Object[]{dir, fileName});
-                mFiles.remove(parts);
+                mFiles.remove(new Object[]{dir, fileName});
 
             } finally {
                 mPathPool.returnObject(path);
@@ -179,7 +195,7 @@ public class VirtualFilesystem implements Closeable {
         }
     }
 
-    public void mknod(String filePath) {
+    public synchronized void mknod(String filePath) {
         try {
             Path path = mPathPool.borrowObject();
             try {
@@ -190,8 +206,8 @@ public class VirtualFilesystem implements Closeable {
 
                 FileMetadata info = new FileMetadata();
                 info.mFlags = 0;
-                Object[] parts = new Object[]{dir, fileName, info};
-                mFiles.add(parts);
+                Object[] key = new Object[]{dir, fileName};
+                mFiles.put(key, info);
             } finally {
                 mPathPool.returnObject(path);
             }
@@ -200,31 +216,7 @@ public class VirtualFilesystem implements Closeable {
         }
     }
 
-    /**
-     *
-     * @param file
-     * @param buffer
-     * @param bytesAvailable
-     * @param offset
-     * @return num bytes read
-     */
-    public int read(VirtualFile file, ByteBuffer buffer, long bytesAvailable, long offset) {
-        return 0;
-    }
-
-    /**
-     *
-     * @param file
-     * @param buf
-     * @param numBytes
-     * @param writeOffset
-     * @return num bytes written
-     */
-    public int write(VirtualFile file, ByteBuffer buf, long numBytes, long writeOffset) {
-        return (int) numBytes;
-    }
-
-    public void unlink(String filePath) {
+    public synchronized void unlink(String filePath) {
         try {
             Path path = mPathPool.borrowObject();
             try {
@@ -234,8 +226,7 @@ public class VirtualFilesystem implements Closeable {
                 String fileName = path.getName();
 
 
-                Object[] parts = mFiles.ceiling(new Object[]{dir, fileName});
-                mFiles.remove(parts);
+                mFiles.remove(new Object[]{dir, fileName});
 
             } finally {
                 mPathPool.returnObject(path);
@@ -245,7 +236,7 @@ public class VirtualFilesystem implements Closeable {
         }
     }
 
-    public boolean pathExists(String filePath) {
+    public synchronized boolean pathExists(String filePath) {
 
         try {
             Path path = mPathPool.borrowObject();
@@ -255,7 +246,7 @@ public class VirtualFilesystem implements Closeable {
                 String dir = path.getParent();
                 String fileName = path.getName();
 
-                return mFiles.ceiling(new Object[]{dir, fileName}) != null;
+                return mFiles.containsKey(new Object[]{dir, fileName});
             } finally {
                 mPathPool.returnObject(path);
             }
