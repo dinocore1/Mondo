@@ -32,6 +32,7 @@ public class VirtualFile implements Closeable {
     private RandomAccessFile mTempBufferFile;
     private SecureSegment mCachedFSSegment;
     private byte[] mCachedBuff;
+    public int mRefCount;
 
     public VirtualFile(VirtualFilesystem virtualFS, FilesystemStorage storage) {
         Preconditions.checkArgument(virtualFS != null && storage != null);

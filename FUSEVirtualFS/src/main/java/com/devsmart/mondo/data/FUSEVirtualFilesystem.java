@@ -148,12 +148,15 @@ public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
                     vfile.mPath = mVirtualFS.mPathPool.borrowObject();
                     vfile.mPath.setFilepath(path);
                     vfile.mHandle = mFileHandles.allocate();
+                    vfile.mRefCount = 1;
                     info.fh(vfile.mHandle);
                     mOpenFiles.put(path, vfile);
                 } catch (Exception e) {
                     LOGGER.error("", e);
                     return -ErrorCodes.ENFILE();
                 }
+            } else {
+                vfile.mRefCount += 1;
             }
         }
         return 0;
@@ -164,8 +167,15 @@ public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
         LOGGER.info("release {}", path);
 
         try {
-            VirtualFile vfile = mOpenFiles.remove(path);
-            addToFlushQueue(vfile);
+            VirtualFile vfile = mOpenFiles.get(path);
+            if(vfile != null) {
+                vfile.mRefCount -= 1;
+                if (vfile.mRefCount <= 0) {
+                    mOpenFiles.remove(path);
+                    addToFlushQueue(vfile);
+                }
+            }
+
             return 0;
         } catch (Exception e) {
             LOGGER.error("", e);
