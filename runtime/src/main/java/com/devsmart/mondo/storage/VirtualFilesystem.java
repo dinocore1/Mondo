@@ -58,6 +58,11 @@ public class VirtualFilesystem implements Closeable {
         public String getName() {
             return mFilename;
         }
+
+        @Override
+        public String toString() {
+            return mParent + mPathSeperator + mFilename;
+        }
     }
 
     private static final Logger LOGGER = LoggerFactory.getLogger(VirtualFilesystem.class);

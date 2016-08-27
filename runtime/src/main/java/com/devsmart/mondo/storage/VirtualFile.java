@@ -99,6 +99,7 @@ public class VirtualFile implements Closeable {
     public synchronized void fsync() throws IOException {
 
 
+        LOGGER.info("fsync {}", mPath);
         /*
             create overlay stream
             pump the overlay stream while running buzhash to break it up into new segments
@@ -124,6 +125,7 @@ public class VirtualFile implements Closeable {
 
             mVirtualFS.writeBack(this);
         }
+        LOGGER.info("done");
 
     }
 

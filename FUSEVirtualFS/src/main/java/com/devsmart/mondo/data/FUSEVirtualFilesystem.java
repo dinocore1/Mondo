@@ -254,4 +254,12 @@ public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
             return 0;
         }
     }
+
+    @Override
+    protected int rename(String path, String newName) {
+        LOGGER.info("rename {} ==> {}", path, newName);
+        return super.rename(path, newName);
+    }
+
+
 }

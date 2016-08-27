@@ -58,7 +58,9 @@ public class Main {
 
             mUserspaceFS = userspaceFPClass.newInstance();
             mUserspaceFS.init(mVirtualFilesystem, mFilesystemStorage);
-            mUserspaceFS.mount(new File(mConfigFile.mount));
+            final File mountDir = new File(mConfigFile.mount);
+            LOGGER.info("mount on: {}", mountDir.getAbsolutePath());
+            mUserspaceFS.mount(mountDir);
 
             mRunning = true;
 
