@@ -14,6 +14,8 @@ import java.io.*;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class VirtualFile implements Closeable {
 
@@ -32,7 +34,8 @@ public class VirtualFile implements Closeable {
     private RandomAccessFile mTempBufferFile;
     private SecureSegment mCachedFSSegment;
     private byte[] mCachedBuff;
-    public int mRefCount;
+    public AtomicInteger mRefCount = new AtomicInteger(0);
+    public String mKey;
 
     public VirtualFile(VirtualFilesystem virtualFS, FilesystemStorage storage) {
         Preconditions.checkArgument(virtualFS != null && storage != null);
@@ -86,7 +89,7 @@ public class VirtualFile implements Closeable {
 
 
     @Override
-    public void close() throws IOException {
+    public synchronized void close() throws IOException {
         fsync();
         if(mTempBufferFile != null) {
             mTempBufferFile.close();
@@ -100,7 +103,6 @@ public class VirtualFile implements Closeable {
 
     public synchronized void fsync() throws IOException {
 
-
         LOGGER.info("fsync {}", mPath);
         /*
             create overlay stream
@@ -109,6 +111,7 @@ public class VirtualFile implements Closeable {
          */
 
         if(!mTransientSegments.isEmpty()) {
+            final ArrayList<SecureSegment> newSecureSegments = new ArrayList<SecureSegment>();
             DataBreakerInputStream breaker = new DataBreakerInputStream(new OverlayInputStream(getBackingFile(), mTransientSegments, mFilesystemStorage, mStoredSegments),
                     Hashing.sha1(), 15);
             breaker.setCallback(new DataBreakerInputStream.Callback() {
@@ -120,7 +123,7 @@ public class VirtualFile implements Closeable {
                             ID id = mFilesystemStorage.store(in);
                             assert id.equals(segment.getID());
                         }
-                        mStoredSegments.add(segment);
+                        newSecureSegments.add(segment);
                     } catch (Exception e) {
                         LOGGER.error("", e);
                         Throwables.propagate(e);
@@ -130,6 +133,8 @@ public class VirtualFile implements Closeable {
             IOUtils.pump(breaker, new NullOutputStream());
 
             mVirtualFS.writeBack(this);
+            mTransientSegments.clear();
+            mStoredSegments = newSecureSegments;
         }
         LOGGER.info("done");
 

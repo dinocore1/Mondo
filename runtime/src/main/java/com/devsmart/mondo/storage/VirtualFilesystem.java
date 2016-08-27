@@ -95,16 +95,20 @@ public class VirtualFilesystem implements Closeable {
 
     public synchronized void writeBack(VirtualFile virtualFile) {
         FileMetadata metadata = getFile(virtualFile.mPath);
-        metadata.mSize = virtualFile.getSize();
+        if(metadata != null) {
+            metadata.mSize = virtualFile.getSize();
 
-        if(metadata.mDataFileId == -1) {
-            metadata.mDataFileId = mDataFileId.incrementAndGet();
+            if (metadata.mDataFileId == -1) {
+                metadata.mDataFileId = mDataFileId.incrementAndGet();
+            }
+
+            mFiles.put(new Object[]{virtualFile.mPath.getParent(), virtualFile.mPath.getName()}, metadata);
+            mDataObjects.put(metadata.mDataFileId, virtualFile.getDataFile());
+
+            mDB.commit();
+        } else {
+            LOGGER.warn("meta data is null. Did the file get deleted?");
         }
-
-        mFiles.put(new Object[]{ virtualFile.mPath.getParent(), virtualFile.mPath.getName()}, metadata);
-        mDataObjects.put(metadata.mDataFileId, virtualFile.getDataFile());
-
-        mDB.commit();
     }
 
     @Override

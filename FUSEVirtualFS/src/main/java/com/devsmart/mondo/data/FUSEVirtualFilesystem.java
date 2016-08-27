@@ -48,7 +48,14 @@ public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
             VirtualFile f;
             while((f = dequeue()) != null) {
                 try {
-                    f.close();
+                    f.fsync();
+                    final int refCount = f.mRefCount.get();
+                    if(refCount <= 0) {
+                        synchronized (mOpenFiles) {
+                            f.close();
+                            mOpenFiles.remove(f.mKey);
+                        }
+                    }
                 } catch (Exception e) {
                     LOGGER.error("", e);
                 }
@@ -93,7 +100,10 @@ public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
             return 0;
         }
 
-        VirtualFile vfile = mOpenFiles.get(path);
+        VirtualFile vfile;
+        synchronized (mOpenFiles) {
+            vfile = mOpenFiles.get(path);
+        }
         if(vfile != null) {
             stat.mode(TypeMode.S_IFREG | 0644);
             stat.size(vfile.getSize());
@@ -131,53 +141,66 @@ public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
         return 0;
     }
 
+    private static class ErrorCodeException extends Exception {
+        public final int mErrorCode;
+
+        public ErrorCodeException(int errorCode) {
+            mErrorCode = errorCode;
+        }
+    }
+
+    private VirtualFile openVirtualFile(String path) throws ErrorCodeException {
+        VirtualFile vfile;
+
+        FileMetadata metadata = mVirtualFS.getFile(path);
+        if(metadata == null || metadata.isDirectory()) {
+            throw new ErrorCodeException(-ErrorCodes.ENOENT());
+        }
+
+        vfile = new VirtualFile(mVirtualFS, mFilesystemStorage);
+        vfile.mMetadata = metadata;
+        vfile.setDataFile(mVirtualFS.mDataObjects.get(vfile.mMetadata.mDataFileId));
+        vfile.mPath = mVirtualFS.mPathPool.borrow();
+        vfile.mPath.setFilepath(path);
+        vfile.mKey = path;
+
+        return vfile;
+    }
+
     @Override
     protected int open(String path, StructFuseFileInfo info) {
         LOGGER.info("open {}", path);
-        FileMetadata metadata = mVirtualFS.getFile(path);
-        if(metadata == null || metadata.isDirectory()) {
-            return -ErrorCodes.ENOENT();
-        } else {
-            VirtualFile vfile = mOpenFiles.get(path);
-            if(vfile == null) {
-                try {
-                    vfile = new VirtualFile(mVirtualFS, mFilesystemStorage);
-                    vfile.mMetadata = metadata;
-                    vfile.setDataFile(mVirtualFS.mDataObjects.get(vfile.mMetadata.mDataFileId));
-                    vfile.mPath = mVirtualFS.mPathPool.borrow();
-                    vfile.mPath.setFilepath(path);
-                    vfile.mHandle = mFileHandles.allocate();
-                    vfile.mRefCount = 1;
-                    info.fh(vfile.mHandle);
+
+        try {
+            synchronized (mOpenFiles) {
+                VirtualFile vfile = mOpenFiles.get(path);
+                if (vfile == null) {
+                    vfile = openVirtualFile(path);
+                    vfile.mRefCount.set(1);
                     mOpenFiles.put(path, vfile);
-                } catch (Exception e) {
-                    LOGGER.error("", e);
-                    return -ErrorCodes.ENFILE();
+                } else {
+                    vfile.mRefCount.incrementAndGet();
                 }
-            } else {
-                vfile.mRefCount += 1;
             }
+            return 0;
+        } catch (ErrorCodeException e) {
+            return e.mErrorCode;
         }
-        return 0;
     }
 
     @Override
     protected int release(String path, StructFuseFileInfo info) {
         LOGGER.info("release {}", path);
 
-        try {
-            VirtualFile vfile = mOpenFiles.get(path);
-            if(vfile != null) {
-                vfile.mRefCount -= 1;
-                if (vfile.mRefCount <= 0) {
-                    mOpenFiles.remove(path);
-                    addToFlushQueue(vfile);
-                }
+        VirtualFile vfile;
+        synchronized (mOpenFiles) {
+            vfile = mOpenFiles.get(path);
+        }
+        if(vfile != null) {
+            final int refcount = vfile.mRefCount.decrementAndGet();
+            if (refcount <= 0) {
+                addToFlushQueue(vfile);
             }
-
-            return 0;
-        } catch (Exception e) {
-            LOGGER.error("", e);
         }
 
         return 0;
@@ -202,10 +225,15 @@ public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
     @Override
     protected int read(String path, ByteBuffer buffer, long size, long offset, StructFuseFileInfo info) {
         LOGGER.info("read {} {} {}", path, offset, size);
-        VirtualFile vfile = mOpenFiles.get(path);
+        VirtualFile vfile;
+        synchronized (mOpenFiles) {
+            vfile = mOpenFiles.get(path);
+        }
         if(vfile == null) {
             return -ErrorCodes.ENOENT();
         }
+
+        vfile.mRefCount.incrementAndGet();
         try {
             int bytesRead = vfile.read(buffer, size, offset);
             if(bytesRead > 0) {
@@ -223,22 +251,30 @@ public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
         } catch (Exception e) {
             LOGGER.error("", e);
             return 0;
+        } finally {
+            vfile.mRefCount.decrementAndGet();
         }
     }
 
     @Override
     protected int truncate(String path, long size) {
         LOGGER.info("truncate {} {}", path, size);
-        VirtualFile vfile = mOpenFiles.get(path);
+        VirtualFile vfile;
+        synchronized (mOpenFiles) {
+            vfile = mOpenFiles.get(path);
+        }
         if(vfile == null) {
             return -ErrorCodes.ENOENT();
         }
+        vfile.mRefCount.incrementAndGet();
         try {
             vfile.truncate(size);
             return 0;
         } catch (IOException e) {
             LOGGER.error("", e);
             return 0;
+        } finally {
+            vfile.mRefCount.decrementAndGet();
         }
     }
 
