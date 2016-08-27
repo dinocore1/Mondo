@@ -2,6 +2,7 @@ package com.devsmart.mondo.data;
 
 import com.google.common.hash.HashFunction;
 import com.google.common.hash.Hasher;
+import org.jetbrains.annotations.NotNull;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -54,7 +55,7 @@ public class DataBreakerInputStream extends InputStream {
     public int read() throws IOException {
         final int data = mInputStream.read();
         if(data < 0) {
-            if(!mEndReached) {
+            if(mPos - mLast > 0 && !mEndReached) {
                 mEndReached = true;
                 SecureSegment segment = new SecureSegment(mLast, mPos - mLast, mSecureHash.hash());
 
@@ -80,5 +81,39 @@ public class DataBreakerInputStream extends InputStream {
         }
 
         return data;
+    }
+
+    @Override
+    public int read(@NotNull byte[] b, int off, int len) throws IOException {
+        int bytesRead = mInputStream.read(b, off, len);
+        if(bytesRead > 0) {
+            for(int i=0;i<bytesRead;i++) {
+                final byte data = b[off + i];
+                final long hash = mBuzHash.addByte(data);
+                mSecureHash.putByte(data);
+                mSegmentBuffer.write(data);
+                mPos++;
+                if((hash & mMask) == 0) {
+                    SecureSegment segment = new SecureSegment(mLast, mPos - mLast, mSecureHash.hash());
+                    mSegmentBuffer.flush();
+                    newSegment(segment, mSegmentBuffer.toByteArray());
+                    mSegmentBuffer.reset();
+
+                    mLast = mPos;
+                    mBuzHash.reset();
+                    mSecureHash = mSecureHashFunction.newHasher();
+                }
+            }
+        } else {
+            if(mPos - mLast > 0 && !mEndReached) {
+                mEndReached = true;
+                SecureSegment segment = new SecureSegment(mLast, mPos - mLast, mSecureHash.hash());
+
+                mSegmentBuffer.flush();
+                newSegment(segment, mSegmentBuffer.toByteArray());
+                mSegmentBuffer.reset();
+            }
+        }
+        return bytesRead;
     }
 }

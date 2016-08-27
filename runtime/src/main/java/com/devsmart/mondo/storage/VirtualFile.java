@@ -94,6 +94,8 @@ public class VirtualFile implements Closeable {
             mTempFile.delete();
             mTempFile = null;
         }
+        mVirtualFS.mPathPool.release(mPath);
+        mPath = null;
     }
 
     public synchronized void fsync() throws IOException {
@@ -113,7 +115,11 @@ public class VirtualFile implements Closeable {
                 @Override
                 public void onNewSegment(SecureSegment segment, InputStream in) {
                     try {
-                        ID id = mFilesystemStorage.store(in);
+                        LOGGER.info("new segment");
+                        if(!mFilesystemStorage.contains(segment.getID())) {
+                            ID id = mFilesystemStorage.store(in);
+                            assert id.equals(segment.getID());
+                        }
                         mStoredSegments.add(segment);
                     } catch (Exception e) {
                         LOGGER.error("", e);

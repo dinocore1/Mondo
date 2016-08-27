@@ -7,11 +7,14 @@ import com.google.common.hash.HashFunction;
 import com.google.common.hash.Hasher;
 import com.google.common.hash.Hashing;
 import com.google.common.io.BaseEncoding;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.*;
 
 public class FilesystemStorage {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(FilesystemStorage.class);
     private static final HashFunction HASH_FUNCTION = Hashing.sha1();
 
     private final File mRootDir;
@@ -26,6 +29,11 @@ public class FilesystemStorage {
     public File createTempFile() throws IOException {
         File tempFile = File.createTempFile("baking", ".dat", mTempDir);
         return tempFile;
+    }
+
+    public boolean contains(ID id) {
+        File destFile = getFile(id);
+        return destFile.exists();
     }
 
     public ID store(InputStream in) throws IOException {
@@ -48,9 +56,12 @@ public class FilesystemStorage {
         final ID id = new ID(checksum.asBytes(), 0);
 
         File destFile = getFile(id);
-        destFile.getParentFile().mkdirs();
-        tempFile.renameTo(destFile);
-
+        if(!destFile.exists()) {
+            destFile.getParentFile().mkdirs();
+            tempFile.renameTo(destFile);
+        } else {
+            LOGGER.warn("already exists: {}", id);
+        }
 
         return id;
     }

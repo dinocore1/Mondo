@@ -1,29 +1,20 @@
 package com.devsmart.mondo.storage;
 
 
+import com.devsmart.ObjectPool;
 import com.google.common.base.Function;
-import com.google.common.collect.ComparisonChain;
 import com.google.common.collect.Iterables;
-import org.apache.commons.pool2.BasePooledObjectFactory;
-import org.apache.commons.pool2.ObjectPool;
-import org.apache.commons.pool2.PooledObject;
-import org.apache.commons.pool2.impl.DefaultPooledObject;
-import org.apache.commons.pool2.impl.GenericObjectPool;
-import org.jetbrains.annotations.NotNull;
-import org.mapdb.*;
-import org.mapdb.serializer.GroupSerializerObjectArray;
+import org.mapdb.Atomic;
+import org.mapdb.BTreeMap;
+import org.mapdb.DB;
+import org.mapdb.Serializer;
 import org.mapdb.serializer.SerializerArrayTuple;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.Closeable;
-import java.io.File;
 import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.nio.file.Path;
 import java.util.Map;
-import java.util.NavigableSet;
-import java.util.SortedSet;
 
 public class VirtualFilesystem implements Closeable {
 
@@ -75,7 +66,7 @@ public class VirtualFilesystem implements Closeable {
     private final Atomic.Long mDataFileId;
 
 
-    public VirtualFilesystem(DB database, char pathSeparator) {
+    public VirtualFilesystem(DB database, final char pathSeparator) {
         mDB = database;
         mPathSeparator = pathSeparator;
 
@@ -93,15 +84,10 @@ public class VirtualFilesystem implements Closeable {
         mDataFileId = mDB.atomicLong("dataFileId")
                 .createOrOpen();
 
-        mPathPool = new GenericObjectPool<Path>(new BasePooledObjectFactory<Path>() {
+        mPathPool = new ObjectPool<Path>(10, new ObjectPool.PooledCreator<Path>() {
             @Override
-            public Path create() throws Exception {
-                return new Path(mPathSeparator);
-            }
-
-            @Override
-            public PooledObject<Path> wrap(Path obj) {
-                return new DefaultPooledObject<Path>(obj);
+            public Path create() {
+                return new Path(pathSeparator);
             }
         });
 
@@ -124,10 +110,9 @@ public class VirtualFilesystem implements Closeable {
     @Override
     public void close() throws IOException {
         mDB.close();
-        mPathPool.close();
     }
 
-    public Iterable<String> getFilesInDir(String filePathStr) {
+    public synchronized Iterable<String> getFilesInDir(String filePathStr) {
         Map<Object[], FileMetadata> files = mFiles.prefixSubMap(new Object[]{filePathStr});
         return Iterables.transform(files.keySet(), new Function<Object[], String>() {
             @Override
@@ -144,14 +129,14 @@ public class VirtualFilesystem implements Closeable {
         return retval;
     }
 
-    public FileMetadata getFile(String filePath) {
+    public synchronized FileMetadata getFile(String filePath) {
         try {
-            Path path = mPathPool.borrowObject();
+            Path path = mPathPool.borrow();
             try {
                 path.setFilepath(filePath);
                 return getFile(path);
             } finally {
-                mPathPool.returnObject(path);
+                mPathPool.release(path);
             }
         } catch (Exception e) {
             LOGGER.error("", e);
@@ -162,7 +147,7 @@ public class VirtualFilesystem implements Closeable {
 
     public synchronized void mkdir(String filePath) {
         try {
-            Path path = mPathPool.borrowObject();
+            Path path = mPathPool.borrow();
             try {
                 path.setFilepath(filePath);
 
@@ -173,8 +158,9 @@ public class VirtualFilesystem implements Closeable {
                 info.mFlags = FileMetadata.FLAG_DIR;
                 Object[] key = new Object[]{dir, fileName};
                 mFiles.put(key, info);
+                mDB.commit();
             } finally {
-                mPathPool.returnObject(path);
+                mPathPool.release(path);
             }
         } catch (Exception e) {
             LOGGER.error("", e);
@@ -183,7 +169,7 @@ public class VirtualFilesystem implements Closeable {
 
     public synchronized void rmdir(String filePath) {
         try {
-            Path path = mPathPool.borrowObject();
+            Path path = mPathPool.borrow();
             try {
                 path.setFilepath(filePath);
 
@@ -191,9 +177,10 @@ public class VirtualFilesystem implements Closeable {
                 String fileName = path.getName();
 
                 mFiles.remove(new Object[]{dir, fileName});
+                mDB.commit();
 
             } finally {
-                mPathPool.returnObject(path);
+                mPathPool.release(path);
             }
         } catch (Exception e) {
             LOGGER.error("", e);
@@ -202,7 +189,7 @@ public class VirtualFilesystem implements Closeable {
 
     public synchronized void mknod(String filePath) {
         try {
-            Path path = mPathPool.borrowObject();
+            Path path = mPathPool.borrow();
             try {
                 path.setFilepath(filePath);
 
@@ -213,8 +200,9 @@ public class VirtualFilesystem implements Closeable {
                 info.mFlags = 0;
                 Object[] key = new Object[]{dir, fileName};
                 mFiles.put(key, info);
+                mDB.commit();
             } finally {
-                mPathPool.returnObject(path);
+                mPathPool.release(path);
             }
         } catch (Exception e) {
             LOGGER.error("", e);
@@ -223,7 +211,7 @@ public class VirtualFilesystem implements Closeable {
 
     public synchronized void unlink(String filePath) {
         try {
-            Path path = mPathPool.borrowObject();
+            Path path = mPathPool.borrow();
             try {
                 path.setFilepath(filePath);
 
@@ -232,9 +220,10 @@ public class VirtualFilesystem implements Closeable {
 
 
                 mFiles.remove(new Object[]{dir, fileName});
+                mDB.commit();
 
             } finally {
-                mPathPool.returnObject(path);
+                mPathPool.release(path);
             }
         } catch (Exception e) {
             LOGGER.error("", e);
@@ -244,7 +233,7 @@ public class VirtualFilesystem implements Closeable {
     public synchronized boolean pathExists(String filePath) {
 
         try {
-            Path path = mPathPool.borrowObject();
+            Path path = mPathPool.borrow();
             try {
                 path.setFilepath(filePath);
 
@@ -253,7 +242,7 @@ public class VirtualFilesystem implements Closeable {
 
                 return mFiles.containsKey(new Object[]{dir, fileName});
             } finally {
-                mPathPool.returnObject(path);
+                mPathPool.release(path);
             }
         } catch (Exception e) {
             LOGGER.error("", e);

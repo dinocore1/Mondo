@@ -71,7 +71,7 @@ public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
     }
 
     @Override
-    protected synchronized int readdir(String path, StructFuseFileInfo info, DirectoryFiller filler) {
+    protected int readdir(String path, StructFuseFileInfo info, DirectoryFiller filler) {
         LOGGER.info("readdir {}", path);
 
         if(!"/".equals(path) && !mVirtualFS.pathExists(path)) {
@@ -85,55 +85,54 @@ public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
     }
 
     @Override
-    protected synchronized int getattr(String path, StructStat stat) {
+    protected int getattr(String path, StructStat stat) {
         LOGGER.info("getattr {}", path);
+        FileMetadata metadata;
         if("/".equals(path)) {
             stat.mode(TypeMode.S_IFDIR | 0775);
             return 0;
         }
 
-        FileMetadata metadata = mVirtualFS.getFile(path);
-        if(metadata == null) {
-            return -ErrorCodes.ENOENT();
-        } else {
+        VirtualFile vfile = mOpenFiles.get(path);
+        if(vfile != null) {
+            stat.mode(TypeMode.S_IFREG | 0644);
+            stat.size(vfile.getSize());
+        } else if((metadata = mVirtualFS.getFile(path)) != null) {
             if(metadata.isDirectory()) {
                 stat.mode(TypeMode.S_IFDIR | 0755);
             } else {
                 stat.mode(TypeMode.S_IFREG | 0644);
-                VirtualFile vfile = mOpenFiles.get(path);
-                if(vfile != null) {
-                    stat.size(vfile.getSize());
-                } else {
-                    stat.size(metadata.getSize());
-                }
+                stat.size(metadata.getSize());
             }
-            return 0;
+        } else {
+            return -ErrorCodes.ENOENT();
         }
+        return 0;
     }
 
     @Override
-    protected synchronized int mkdir(String path, long mode) {
+    protected int mkdir(String path, long mode) {
         LOGGER.info("mkdir {} {}", path, mode);
         mVirtualFS.mkdir(path);
         return 0;
     }
 
     @Override
-    protected synchronized int rmdir(String path) {
+    protected int rmdir(String path) {
         LOGGER.info("rmdir {}", path);
         mVirtualFS.rmdir(path);
         return 0;
     }
 
     @Override
-    protected synchronized int mknod(String path, long mode, long dev) {
+    protected int mknod(String path, long mode, long dev) {
         LOGGER.info("mknod {} {}", path, mode);
         mVirtualFS.mknod(path);
         return 0;
     }
 
     @Override
-    protected synchronized int open(String path, StructFuseFileInfo info) {
+    protected int open(String path, StructFuseFileInfo info) {
         LOGGER.info("open {}", path);
         FileMetadata metadata = mVirtualFS.getFile(path);
         if(metadata == null || metadata.isDirectory()) {
@@ -145,7 +144,7 @@ public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
                     vfile = new VirtualFile(mVirtualFS, mFilesystemStorage);
                     vfile.mMetadata = metadata;
                     vfile.setDataFile(mVirtualFS.mDataObjects.get(vfile.mMetadata.mDataFileId));
-                    vfile.mPath = mVirtualFS.mPathPool.borrowObject();
+                    vfile.mPath = mVirtualFS.mPathPool.borrow();
                     vfile.mPath.setFilepath(path);
                     vfile.mHandle = mFileHandles.allocate();
                     vfile.mRefCount = 1;
@@ -163,7 +162,7 @@ public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
     }
 
     @Override
-    protected synchronized int release(String path, StructFuseFileInfo info) {
+    protected int release(String path, StructFuseFileInfo info) {
         LOGGER.info("release {}", path);
 
         try {
@@ -185,7 +184,7 @@ public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
     }
 
     @Override
-    protected synchronized int write(String path, ByteBuffer buf, long bufSize, long writeOffset, StructFuseFileInfo wrapper) {
+    protected int write(String path, ByteBuffer buf, long bufSize, long writeOffset, StructFuseFileInfo wrapper) {
         LOGGER.info("write {} {} {}", path, bufSize, writeOffset);
         VirtualFile vfile = mOpenFiles.get(path);
         if(vfile == null) {
@@ -201,7 +200,7 @@ public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
     }
 
     @Override
-    protected synchronized int read(String path, ByteBuffer buffer, long size, long offset, StructFuseFileInfo info) {
+    protected int read(String path, ByteBuffer buffer, long size, long offset, StructFuseFileInfo info) {
         LOGGER.info("read {} {} {}", path, offset, size);
         VirtualFile vfile = mOpenFiles.get(path);
         if(vfile == null) {
@@ -228,7 +227,7 @@ public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
     }
 
     @Override
-    protected synchronized int truncate(String path, long size) {
+    protected int truncate(String path, long size) {
         LOGGER.info("truncate {} {}", path, size);
         VirtualFile vfile = mOpenFiles.get(path);
         if(vfile == null) {
@@ -244,7 +243,7 @@ public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
     }
 
     @Override
-    protected synchronized int unlink(String path) {
+    protected int unlink(String path) {
         LOGGER.info("unlink {}", path);
         FileMetadata file = mVirtualFS.getFile(path);
         if(file == null) {
