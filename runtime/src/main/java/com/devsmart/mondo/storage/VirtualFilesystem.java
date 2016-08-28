@@ -18,13 +18,13 @@ import java.util.Map;
 
 public class VirtualFilesystem implements Closeable {
 
-
     public static class Path {
 
         public final char mPathSeperator;
 
         private String mParent;
         private String mFilename;
+        final Object[] mDBKey = new Object[2];
 
         public Path(char pathSeperator) {
             mPathSeperator = pathSeperator;
@@ -39,6 +39,9 @@ public class VirtualFilesystem implements Closeable {
             }
 
             mFilename = filepath.substring(i + 1, filepath.length());
+
+            mDBKey[0] = mParent;
+            mDBKey[1] = mFilename;
         }
 
 
@@ -127,132 +130,117 @@ public class VirtualFilesystem implements Closeable {
     }
 
     public synchronized FileMetadata getFile(Path path) {
-        String dir = path.getParent();
-        String fileName = path.getName();
-        FileMetadata retval = mFiles.get(new Object[]{dir, fileName});
+        FileMetadata retval = mFiles.get(path.mDBKey);
         return retval;
     }
 
     public synchronized FileMetadata getFile(String filePath) {
+        Path path = mPathPool.borrow();
         try {
-            Path path = mPathPool.borrow();
-            try {
-                path.setFilepath(filePath);
-                return getFile(path);
-            } finally {
-                mPathPool.release(path);
-            }
-        } catch (Exception e) {
-            LOGGER.error("", e);
-            return null;
+            path.setFilepath(filePath);
+            FileMetadata metadata = mFiles.get(path.mDBKey);
+            return metadata;
+        } finally {
+            mPathPool.release(path);
         }
-
     }
 
     public synchronized void mkdir(String filePath) {
+        Path path = mPathPool.borrow();
         try {
-            Path path = mPathPool.borrow();
-            try {
-                path.setFilepath(filePath);
+            path.setFilepath(filePath);
 
-                String dir = path.getParent();
-                String fileName = path.getName();
-
-                FileMetadata info = new FileMetadata();
-                info.mFlags = FileMetadata.FLAG_DIR;
-                Object[] key = new Object[]{dir, fileName};
-                mFiles.put(key, info);
-                mDB.commit();
-            } finally {
-                mPathPool.release(path);
-            }
-        } catch (Exception e) {
-            LOGGER.error("", e);
+            FileMetadata info = new FileMetadata();
+            info.mFlags = FileMetadata.FLAG_DIR |
+                    FileMetadata.FLAG_READ | FileMetadata.FLAG_WRITE | FileMetadata.FLAG_EXECUTE;
+            mFiles.put(path.mDBKey, info);
+            mDB.commit();
+        } finally {
+            mPathPool.release(path);
         }
     }
 
     public synchronized void rmdir(String filePath) {
+        Path path = mPathPool.borrow();
         try {
-            Path path = mPathPool.borrow();
-            try {
-                path.setFilepath(filePath);
+            path.setFilepath(filePath);
 
-                String dir = path.getParent();
-                String fileName = path.getName();
+            mFiles.remove(path.mDBKey);
+            mDB.commit();
 
-                mFiles.remove(new Object[]{dir, fileName});
-                mDB.commit();
-
-            } finally {
-                mPathPool.release(path);
-            }
-        } catch (Exception e) {
-            LOGGER.error("", e);
+        } finally {
+            mPathPool.release(path);
         }
     }
 
     public synchronized void mknod(String filePath) {
+        Path path = mPathPool.borrow();
         try {
-            Path path = mPathPool.borrow();
-            try {
-                path.setFilepath(filePath);
+            path.setFilepath(filePath);
 
-                String dir = path.getParent();
-                String fileName = path.getName();
-
-                FileMetadata info = new FileMetadata();
-                info.mFlags = 0;
-                Object[] key = new Object[]{dir, fileName};
-                mFiles.put(key, info);
-                mDB.commit();
-            } finally {
-                mPathPool.release(path);
-            }
-        } catch (Exception e) {
-            LOGGER.error("", e);
+            FileMetadata info = new FileMetadata();
+            info.mFlags = 0;
+            mFiles.put(path.mDBKey, info);
+            mDB.commit();
+        } finally {
+            mPathPool.release(path);
         }
     }
 
     public synchronized void unlink(String filePath) {
+        Path path = mPathPool.borrow();
         try {
-            Path path = mPathPool.borrow();
-            try {
-                path.setFilepath(filePath);
+            path.setFilepath(filePath);
 
-                String dir = path.getParent();
-                String fileName = path.getName();
-
-
-                mFiles.remove(new Object[]{dir, fileName});
-                mDB.commit();
-
-            } finally {
-                mPathPool.release(path);
+            FileMetadata metadata = mFiles.remove(path.mDBKey);
+            if(metadata != null && metadata.mDataFileId >= 0) {
+                mDataObjects.remove(metadata.mDataFileId);
             }
-        } catch (Exception e) {
-            LOGGER.error("", e);
+            mDB.commit();
+
+        } finally {
+            mPathPool.release(path);
+        }
+    }
+
+    public synchronized void truncate(String filePath, long size) {
+        Path path = mPathPool.borrow();
+        try {
+            path.setFilepath(filePath);
+            FileMetadata metadata = mFiles.get(path.mDBKey);
+            metadata.mSize = size;
+            mFiles.put(path.mDBKey, metadata);
+            mDB.close();
+        } finally {
+            mPathPool.release(path);
+        }
+
+    }
+
+    public synchronized void rename(String oldFilepath, String newFilepath) {
+        Path path = mPathPool.borrow();
+        try {
+            path.setFilepath(oldFilepath);
+            FileMetadata metadata = mFiles.remove(path.mDBKey);
+
+            path.setFilepath(newFilepath);
+            mFiles.put(path.mDBKey, metadata);
+
+            mDB.commit();
+
+        } finally {
+            mPathPool.release(path);
         }
     }
 
     public synchronized boolean pathExists(String filePath) {
-
+        Path path = mPathPool.borrow();
         try {
-            Path path = mPathPool.borrow();
-            try {
-                path.setFilepath(filePath);
-
-                String dir = path.getParent();
-                String fileName = path.getName();
-
-                return mFiles.containsKey(new Object[]{dir, fileName});
-            } finally {
-                mPathPool.release(path);
-            }
-        } catch (Exception e) {
-            LOGGER.error("", e);
-            return false;
+            path.setFilepath(filePath);
+            return mFiles.containsKey(path.mDBKey);
+        } finally {
+            mPathPool.release(path);
         }
-
 
     }
 

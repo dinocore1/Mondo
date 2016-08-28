@@ -15,6 +15,7 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.ListIterator;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class VirtualFile implements Closeable {
@@ -90,7 +91,6 @@ public class VirtualFile implements Closeable {
 
     @Override
     public synchronized void close() throws IOException {
-        fsync();
         if(mTempBufferFile != null) {
             mTempBufferFile.close();
             mTempBufferFile = null;
@@ -199,10 +199,12 @@ public class VirtualFile implements Closeable {
 
     public synchronized void truncate(long size) throws IOException {
 
-        if(size == 0) {
-            mStoredSegments.clear();
-        } else {
-            //TODO: figure out how to do this properly
+        ListIterator<SecureSegment> it = mStoredSegments.listIterator();
+        while(it.hasNext()){
+            SecureSegment storedSegment = it.next();
+            if(storedSegment.offset >= size) {
+                it.remove();
+            }
         }
 
         if(mTempBufferFile != null) {

@@ -50,7 +50,7 @@ public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
                 try {
                     f.fsync();
                     final int refCount = f.mRefCount.get();
-                    if(refCount <= 0) {
+                    if(refCount == 0) {
                         synchronized (mOpenFiles) {
                             f.close();
                             mOpenFiles.remove(f.mKey);
@@ -96,7 +96,7 @@ public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
         LOGGER.info("getattr {}", path);
         FileMetadata metadata;
         if("/".equals(path)) {
-            stat.mode(TypeMode.S_IFDIR | 0775);
+            stat.mode(TypeMode.S_IFDIR | 0755);
             return 0;
         }
 
@@ -119,6 +119,34 @@ public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
         }
         return 0;
     }
+
+    /*
+    @Override
+    protected int access(String path, int access) {
+        LOGGER.info("access {} {}", path, access);
+        if(path.equals("/")) {
+            return 0;
+        }
+        FileMetadata metadata = mVirtualFS.getFile(path);
+        if(metadata == null) {
+            return -ErrorCodes.ENOENT();
+        }
+
+        if((access & FileMetadata.FLAG_EXECUTE) > 0
+                && (metadata.mFlags & FileMetadata.FLAG_EXECUTE) == 0) {
+            return -ErrorCodes.EACCES();
+        }
+        if((access & FileMetadata.FLAG_READ) > 0
+                && (metadata.mFlags & FileMetadata.FLAG_READ) == 0) {
+            return -ErrorCodes.EACCES();
+        }
+        if((access & FileMetadata.FLAG_WRITE) > 0
+                && (metadata.mFlags & FileMetadata.FLAG_WRITE) == 0) {
+            return -ErrorCodes.EACCES();
+        }
+        return 0;
+    }
+    */
 
     @Override
     protected int mkdir(String path, long mode) {
@@ -199,7 +227,7 @@ public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
         if(vfile != null) {
             final int refcount = vfile.mRefCount.decrementAndGet();
             if (refcount <= 0) {
-                addToFlushQueue(vfile);
+                //addToFlushQueue(vfile);
             }
         }
 
@@ -209,16 +237,22 @@ public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
     @Override
     protected int write(String path, ByteBuffer buf, long bufSize, long writeOffset, StructFuseFileInfo wrapper) {
         LOGGER.info("write {} {} {}", path, bufSize, writeOffset);
-        VirtualFile vfile = mOpenFiles.get(path);
+        VirtualFile vfile;
+        synchronized (mOpenFiles) {
+            vfile = mOpenFiles.get(path);
+        }
         if(vfile == null) {
             return -ErrorCodes.ENOENT();
         }
+        vfile.mRefCount.incrementAndGet();
         try {
             int bytesWritten = vfile.write(buf, bufSize, writeOffset);
             return bytesWritten;
         } catch (Exception e) {
             LOGGER.error("", e);
             return 0;
+        } finally {
+            vfile.mRefCount.decrementAndGet();
         }
     }
 
@@ -259,41 +293,68 @@ public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
     @Override
     protected int truncate(String path, long size) {
         LOGGER.info("truncate {} {}", path, size);
-        VirtualFile vfile;
-        synchronized (mOpenFiles) {
-            vfile = mOpenFiles.get(path);
-        }
-        if(vfile == null) {
-            return -ErrorCodes.ENOENT();
-        }
-        vfile.mRefCount.incrementAndGet();
+        //mVirtualFS.truncate(path, size);
+
         try {
-            vfile.truncate(size);
+            VirtualFile vfile;
+            synchronized (mOpenFiles) {
+                vfile = mOpenFiles.get(path);
+            }
+            if (vfile == null) {
+                vfile = openVirtualFile(path);
+            }
+
+            vfile.mRefCount.incrementAndGet();
+            try {
+                vfile.truncate(size);
+            } catch (IOException e) {
+                throw new ErrorCodeException(-ErrorCodes.EFAULT());
+            } finally {
+                vfile.mRefCount.decrementAndGet();
+            }
+
             return 0;
-        } catch (IOException e) {
-            LOGGER.error("", e);
-            return 0;
-        } finally {
-            vfile.mRefCount.decrementAndGet();
+
+        } catch (ErrorCodeException e) {
+            return e.mErrorCode;
         }
+
+
     }
 
     @Override
     protected int unlink(String path) {
         LOGGER.info("unlink {}", path);
-        FileMetadata file = mVirtualFS.getFile(path);
-        if(file == null) {
-            return -ErrorCodes.ENOENT();
-        } else {
+
+        try {
+            VirtualFile vfile;
+            synchronized (mOpenFiles) {
+                vfile = mOpenFiles.get(path);
+            }
+            if (vfile != null) {
+                vfile.close();
+                mOpenFiles.remove(vfile);
+            }
             mVirtualFS.unlink(path);
+
             return 0;
+        } catch (IOException e) {
+            return -ErrorCodes.EFAULT();
         }
     }
 
     @Override
     protected int rename(String path, String newName) {
         LOGGER.info("rename {} ==> {}", path, newName);
-        return super.rename(path, newName);
+        synchronized (mOpenFiles) {
+            VirtualFile vfile = mOpenFiles.remove(path);
+            if(vfile != null) {
+                vfile.mPath.setFilepath(newName);
+                mOpenFiles.put(newName, vfile);
+            }
+        }
+        mVirtualFS.rename(path, newName);
+        return 0;
     }
 
 
