@@ -14,20 +14,21 @@ public class VirtualFilesystemTests {
         DB db = DBMaker.memoryDB().make();
 
         VirtualFilesystem.Path p = new VirtualFilesystem.Path('/');
-        p.setFilepath("/");
-        assertEquals("/", p.getParent());
-        assertEquals("", p.getName());
 
         p.setFilepath("/test");
         assertEquals("/", p.getParent());
         assertEquals("test", p.getName());
 
-        p.setFilepath("/test/word");
-        assertEquals("/test", p.getParent());
-        assertEquals("word", p.getName());
+        p.setFilepath("/test/word.txt");
+        assertEquals("/test/", p.getParent());
+        assertEquals("word.txt", p.getName());
+
+        p.setFilepath("/");
+        assertEquals("", p.getParent());
+        assertEquals("", p.getName());
 
         p.setFilepath("/test/word/cool");
-        assertEquals("/test/word", p.getParent());
+        assertEquals("/test/word/", p.getParent());
         assertEquals("cool", p.getName());
     }
 

@@ -31,14 +31,17 @@ public class VirtualFilesystem implements Closeable {
         }
 
         public void setFilepath(String filepath) {
+            final int strLen = filepath.length();
             int i = filepath.lastIndexOf(mPathSeperator);
-            if(i == 0) {
-                mParent = "/";
+
+            if(strLen == 1 && i == 0) {
+                mParent = "";
+                mFilename = "";
             } else {
-                mParent = filepath.substring(0, i);
+                mParent = filepath.substring(0, Math.max(i + 1, 1));
+                mFilename = filepath.substring(i + 1, strLen);
             }
 
-            mFilename = filepath.substring(i + 1, filepath.length());
 
             mDBKey[0] = mParent;
             mDBKey[1] = mFilename;
@@ -94,6 +97,16 @@ public class VirtualFilesystem implements Closeable {
             }
         });
 
+        Path rootDir = mPathPool.borrow();
+        rootDir.setFilepath("/");
+        if(!mFiles.containsKey(rootDir.mDBKey)) {
+            FileMetadata info = new FileMetadata();
+            info.mFlags = FileMetadata.FLAG_DIR |
+                    FileMetadata.FLAG_READ | FileMetadata.FLAG_WRITE | FileMetadata.FLAG_EXECUTE;
+            mFiles.put(rootDir.mDBKey, info);
+        }
+        mPathPool.release(rootDir);
+
     }
 
     public synchronized void writeBack(VirtualFile virtualFile) {
@@ -120,7 +133,7 @@ public class VirtualFilesystem implements Closeable {
     }
 
     public synchronized Iterable<String> getFilesInDir(String filePathStr) {
-        Map<Object[], FileMetadata> files = mFiles.prefixSubMap(new Object[]{filePathStr});
+            Map<Object[], FileMetadata> files = mFiles.prefixSubMap(new Object[]{filePathStr});
         return Iterables.transform(files.keySet(), new Function<Object[], String>() {
             @Override
             public String apply(Object[] input) {

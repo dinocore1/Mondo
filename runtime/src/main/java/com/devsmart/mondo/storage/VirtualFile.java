@@ -37,6 +37,7 @@ public class VirtualFile implements Closeable {
     private byte[] mCachedBuff;
     public AtomicInteger mRefCount = new AtomicInteger(0);
     public String mKey;
+    public int mOpenMode;
 
     public VirtualFile(VirtualFilesystem virtualFS, FilesystemStorage storage) {
         Preconditions.checkArgument(virtualFS != null && storage != null);
@@ -88,9 +89,13 @@ public class VirtualFile implements Closeable {
         }
     }
 
+    public void open(int openMode) {
+        mOpenMode = openMode;
+    }
+
 
     @Override
-    public synchronized void close() throws IOException {
+    public void close() throws IOException {
         if(mTempBufferFile != null) {
             mTempBufferFile.close();
             mTempBufferFile = null;
@@ -224,6 +229,4 @@ public class VirtualFile implements Closeable {
         }
         return mTempBufferFile;
     }
-
-
 }
