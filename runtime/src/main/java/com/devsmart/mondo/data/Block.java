@@ -1,21 +1,27 @@
 package com.devsmart.mondo.data;
 
 
-public class Block implements Comparable<Block> {
+public final class Block<T> implements Comparable<Block> {
 
     public final long offset;
     public final int len;
     public final long secondaryOffset;
+    public final T continer;
 
 
-    public Block(long offset, int len, long secondaryOffset) {
+    public Block(long offset, int len, long secondaryOffset, T continer) {
         this.offset = offset;
         this.len = len;
         this.secondaryOffset = secondaryOffset;
+        this.continer = continer;
     }
 
     public Block(long offset, int len) {
-        this(offset, len, 0);
+        this(offset, len, 0, null);
+    }
+
+    public static Block createKey(long offset) {
+        return new Block(offset, 1, 0, null);
     }
 
     public long end() {
@@ -51,7 +57,7 @@ public class Block implements Comparable<Block> {
 
     @Override
     public int hashCode() {
-        return (int) (offset ^ len);
+        return (int) (offset ^ len ^ secondaryOffset);
     }
 
     @Override
@@ -60,7 +66,7 @@ public class Block implements Comparable<Block> {
             return false;
         }
         Block other = (Block) obj;
-        return offset == other.offset && len == other.len;
+        return offset == other.offset && len == other.len && secondaryOffset == other.secondaryOffset;
     }
 
     @Override
