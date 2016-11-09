@@ -84,7 +84,7 @@ public class FilesystemStorage {
         }
     }
 
-    private File getFile(ID id) {
+    public File getFile(ID id) {
         String filename = id.toString(BaseEncoding.base16());
 
         File file = new File(mRootDir, filename.substring(0, 2));

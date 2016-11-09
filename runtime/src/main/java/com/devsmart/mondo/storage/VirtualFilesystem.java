@@ -93,7 +93,7 @@ public class VirtualFilesystem implements Closeable {
         mPathPool = new ObjectPool<Path>(10, new ObjectPool.PooledCreator<Path>() {
             @Override
             public Path create() {
-                return new Path(pathSeparator);
+                return createPath();
             }
         });
 
@@ -109,22 +109,8 @@ public class VirtualFilesystem implements Closeable {
 
     }
 
-    public synchronized void writeBack(VirtualFile virtualFile) {
-        FileMetadata metadata = getFile(virtualFile.mPath);
-        if(metadata != null) {
-            metadata.mSize = virtualFile.getSize();
-
-            if (metadata.mDataFileId == -1) {
-                metadata.mDataFileId = mDataFileId.incrementAndGet();
-            }
-
-            mFiles.put(new Object[]{virtualFile.mPath.getParent(), virtualFile.mPath.getName()}, metadata);
-            mDataObjects.put(metadata.mDataFileId, virtualFile.getDataFile());
-
-            mDB.commit();
-        } else {
-            LOGGER.warn("meta data is null. Did the file get deleted?");
-        }
+    public Path createPath() {
+        return new Path(mPathSeparator);
     }
 
     @Override
@@ -186,15 +172,19 @@ public class VirtualFilesystem implements Closeable {
         }
     }
 
-    public synchronized void mknod(String filePath) {
+    public synchronized boolean mknod(String filePath) {
         Path path = mPathPool.borrow();
         try {
             path.setFilepath(filePath);
 
+            if(mFiles.containsKey(path.mDBKey)) {
+                return false;
+            }
             FileMetadata info = new FileMetadata();
-            info.mFlags = 0;
+            info.mFlags = FileMetadata.FLAG_READ | FileMetadata.FLAG_WRITE | FileMetadata.FLAG_EXECUTE;
             mFiles.put(path.mDBKey, info);
             mDB.commit();
+            return true;
         } finally {
             mPathPool.release(path);
         }

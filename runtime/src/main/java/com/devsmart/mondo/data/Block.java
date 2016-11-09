@@ -20,8 +20,8 @@ public final class Block<T> implements Comparable<Block> {
         this(offset, len, 0, null);
     }
 
-    public static Block createKey(long offset) {
-        return new Block(offset, 1, 0, null);
+    public static <T> Block<T> createKey(long offset) {
+        return new Block<T>(offset, 1, 0, null);
     }
 
     public long end() {

@@ -1,12 +1,13 @@
 package com.devsmart.mondo.storage;
 
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 
-public interface BlockStorage {
+public interface BlockStorage extends Closeable {
 
-    void readBlock(long offset, ByteBuffer buffer) throws IOException;
-    void writeBlock(long offset, ByteBuffer buffer) throws IOException;
+    int readBlock(long offset, ByteBuffer buffer) throws IOException;
+    int writeBlock(long offset, ByteBuffer buffer) throws IOException;
 
 }

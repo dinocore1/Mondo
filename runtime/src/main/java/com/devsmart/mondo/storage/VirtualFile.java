@@ -1,48 +1,69 @@
 package com.devsmart.mondo.storage;
 
 
-import com.devsmart.IOUtils;
-import com.devsmart.mondo.data.*;
+import com.devsmart.mondo.data.Block;
+import com.devsmart.mondo.data.BlockSet;
 import com.devsmart.mondo.kademlia.ID;
 import com.google.common.base.Preconditions;
-import com.google.common.base.Throwables;
-import com.google.common.hash.Hashing;
+import com.google.common.cache.*;
+import com.google.common.hash.HashCode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.*;
+import java.io.Closeable;
+import java.io.File;
+import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.ListIterator;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.ExecutionException;
 
 public class VirtualFile implements Closeable {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(VirtualFile.class);
 
+    public static final int BLOCK_SIZE = 4096;
+
+
 
     private final FilesystemStorage mFilesystemStorage;
     private final VirtualFilesystem mVirtualFS;
+    public final VirtualFilesystem.Path mPath;
+    public final FileMetadata mMetadata;
 
-    public VirtualFilesystem.Path mPath;
-    public FileMetadata mMetadata;
+    private final BlockSet<BlockStorage> mBlockSet = new BlockSet<BlockStorage>();
+
     public int mHandle;
-    private SegmentList mTransientSegments = new SegmentList();
-    private ArrayList<SecureSegment> mStoredSegments;
-    private File mTempFile;
-    private RandomAccessFile mTempBufferFile;
-    private SecureSegment mCachedFSSegment;
-    private byte[] mCachedBuff;
-    public AtomicInteger mRefCount = new AtomicInteger(0);
-    public String mKey;
     public int mOpenMode;
 
-    public VirtualFile(VirtualFilesystem virtualFS, FilesystemStorage storage) {
+    private final LoadingCache<HashCode, FileBlockStorage> mFileBlockStorageCache = CacheBuilder.newBuilder()
+            .removalListener(new RemovalListener<HashCode, FileBlockStorage>() {
+                @Override
+                public void onRemoval(RemovalNotification<HashCode, FileBlockStorage> notification) {
+                    try {
+                        notification.getValue().close();
+                    } catch (IOException e) {
+                        LOGGER.error("error closing file", e);
+                    }
+                }
+            })
+            .maximumSize(10)
+            .build(new CacheLoader<HashCode, FileBlockStorage>() {
+        @Override
+        public FileBlockStorage load(HashCode key) throws Exception {
+            byte[] keybytes = key.asBytes();
+            File f = mFilesystemStorage.getFile(new ID(keybytes, keybytes.length));
+            return new FileBlockStorage(f);
+        }
+    });
+
+
+    public VirtualFile(VirtualFilesystem virtualFS, FilesystemStorage storage, VirtualFilesystem.Path path, FileMetadata metadata) {
         Preconditions.checkArgument(virtualFS != null && storage != null);
         mVirtualFS = virtualFS;
         mFilesystemStorage = storage;
+        mPath = path;
+        mMetadata = metadata;
+
+        setDataFile(mVirtualFS.mDataObjects.get(metadata.mDataFileId));
     }
 
     public boolean isDirectory() {
@@ -58,35 +79,51 @@ public class VirtualFile implements Closeable {
     }
 
     public long getSize() {
-        return Math.max(mTransientSegments.end(), mMetadata.getSize());
-    }
-
-    public DataFile getDataFile() {
-        DataFile retval = new DataFile();
-        retval.mParts = new FilePart[mStoredSegments.size()];
-        int i = 0;
-        for(Segment s : mStoredSegments) {
-            SecureSegment ss = (SecureSegment) s;
-            retval.mParts[i++] = new FilePart((int) ss.length, ss.secureHash.asBytes());
-        }
-
-        return retval;
+        return mBlockSet.getLast().end();
     }
 
     public void setDataFile(DataFile datafile) {
         long offset = 0;
         if(datafile != null && datafile.mParts != null && datafile.mParts.length >= 0) {
-            mStoredSegments = new ArrayList<SecureSegment>(datafile.mParts.length);
             for (int i = 0; i < datafile.mParts.length; i++) {
                 FilePart part = datafile.mParts[i];
                 final long size = part.getSize();
-                mStoredSegments.add(new SecureSegment(offset, size, part.getSha1Checksum()));
+                Block<BlockStorage> block = new Block<BlockStorage>(offset, (int) size, 0, createBlockStorageWrapper(part.getSha1Checksum()));
+                mBlockSet.add(block);
                 offset += size;
             }
-
-        } else {
-            mStoredSegments = new ArrayList<SecureSegment>();
         }
+    }
+
+    private BlockStorage createBlockStorageWrapper(final HashCode sha1Checksum) {
+        return new BlockStorage() {
+            @Override
+            public int readBlock(long offset, ByteBuffer buffer) throws IOException {
+                try {
+                    FileBlockStorage storage = mFileBlockStorageCache.get(sha1Checksum);
+                    return storage.readBlock(offset, buffer);
+                } catch (ExecutionException e) {
+                    LOGGER.error("", e);
+                    throw new IOException(e);
+                }
+            }
+
+            @Override
+            public int writeBlock(long offset, ByteBuffer buffer) throws IOException {
+                try {
+                    FileBlockStorage storage = mFileBlockStorageCache.get(sha1Checksum);
+                    return storage.writeBlock(offset, buffer);
+                } catch (ExecutionException e) {
+                    LOGGER.error("", e);
+                    throw new IOException(e);
+                }
+            }
+
+            @Override
+            public void close() throws IOException {
+
+            }
+        };
     }
 
     public void open(int openMode) {
@@ -96,137 +133,40 @@ public class VirtualFile implements Closeable {
 
     @Override
     public void close() throws IOException {
-        if(mTempBufferFile != null) {
-            mTempBufferFile.close();
-            mTempBufferFile = null;
-            mTempFile.delete();
-            mTempFile = null;
-        }
-        mVirtualFS.mPathPool.release(mPath);
-        mPath = null;
+        //TODO: implement
     }
 
     public synchronized void fsync() throws IOException {
-
-        LOGGER.info("fsync {}", mPath);
-        /*
-            create overlay stream
-            pump the overlay stream while running buzhash to break it up into new segments
-            write out new segments
-         */
-
-        if(!mTransientSegments.isEmpty()) {
-            final ArrayList<SecureSegment> newSecureSegments = new ArrayList<SecureSegment>();
-            DataBreakerInputStream breaker = new DataBreakerInputStream(new OverlayInputStream(getBackingFile(), mTransientSegments, mFilesystemStorage, mStoredSegments),
-                    Hashing.sha1(), 15);
-            breaker.setCallback(new DataBreakerInputStream.Callback() {
-                @Override
-                public void onNewSegment(SecureSegment segment, InputStream in) {
-                    try {
-                        LOGGER.info("new segment");
-                        if(!mFilesystemStorage.contains(segment.getID())) {
-                            ID id = mFilesystemStorage.store(in);
-                            assert id.equals(segment.getID());
-                        }
-                        newSecureSegments.add(segment);
-                    } catch (Exception e) {
-                        LOGGER.error("", e);
-                        Throwables.propagate(e);
-                    }
-                }
-            });
-            IOUtils.pump(breaker, new NullOutputStream());
-
-            mVirtualFS.writeBack(this);
-            mTransientSegments.clear();
-            mStoredSegments = newSecureSegments;
-        }
-        LOGGER.info("done");
+        //TODO: implement
 
     }
 
 
     public synchronized int write(ByteBuffer inputBuffer, long size, long offset) throws IOException {
 
-        RandomAccessFile backingFile = getBackingFile();
 
-        FileChannel channel = backingFile.getChannel();
-        channel.position(offset);
-        long bytesWritten = channel.write(inputBuffer);
 
-        Segment s = new Segment(offset, bytesWritten);
-        mTransientSegments.merge(s);
+        //TODO: implement
+        return 0;
 
-        return (int) bytesWritten;
     }
 
-    private void loadFSSegment(SecureSegment segment) throws IOException {
-        if(mCachedFSSegment == null || !mCachedFSSegment.getID().equals(segment.getID())) {
-            InputStream in = mFilesystemStorage.load(segment.getID());
-            ByteArrayOutputStream out = new ByteArrayOutputStream();
-            IOUtils.pump(in, out);
-            mCachedBuff = out.toByteArray();
-            mCachedFSSegment = segment;
-        }
-    }
-
-    private SecureSegment getStoredSegmentContainer(Segment s) {
-        for(SecureSegment storedSegment : mStoredSegments) {
-            if(storedSegment.contains(s)) {
-                return storedSegment;
-            }
-        }
-        return null;
-    }
 
     public synchronized int read(ByteBuffer buffer, long size, long offset) throws IOException {
-        SecureSegment storedSegment;
-        Segment s = new Segment(offset, size);
-
-        if(mTransientSegments.getContainer(s) != null) {
-            RandomAccessFile transientFile = getBackingFile();
-            FileChannel channel = transientFile.getChannel();
-            channel.position(offset);
-            return channel.read(buffer);
-        } else if((storedSegment = getStoredSegmentContainer(s)) != null){
-            //read from data store
-            loadFSSegment(storedSegment);
-            final int bufOffset = (int) (offset-mCachedFSSegment.offset);
-            int len = (int)Math.min(size, mCachedBuff.length-bufOffset);
-            buffer.put(mCachedBuff, bufOffset, len);
-            return len;
+        Block<BlockStorage> block = mBlockSet.getBlockContaining(offset);
+        if(block != null) {
+            BlockStorage storage = block.continer;
+            int bytesRead = storage.readBlock(block.secondaryOffset, buffer);
+            return bytesRead;
         } else {
-            return 0;
-            //throw new IOException("no data for offset: " + offset);
+            final String msg = String.format("no storage for offset: %d", offset);
+            LOGGER.error(msg);
+            throw new IOException(msg);
         }
-
     }
 
     public synchronized void truncate(long size) throws IOException {
-
-        ListIterator<SecureSegment> it = mStoredSegments.listIterator();
-        while(it.hasNext()){
-            SecureSegment storedSegment = it.next();
-            if(storedSegment.offset >= size) {
-                it.remove();
-            }
-        }
-
-        if(mTempBufferFile != null) {
-            mTempBufferFile.getChannel().truncate(size);
-        }
-        mTransientSegments.truncate(size);
-
+        //TODO:
     }
 
-    private RandomAccessFile getBackingFile() throws IOException {
-        if(mTempFile == null) {
-            mTempFile = mFilesystemStorage.createTempFile();
-        }
-
-        if(mTempBufferFile == null) {
-            mTempBufferFile = new RandomAccessFile(mTempFile, "rw");
-        }
-        return mTempBufferFile;
-    }
 }

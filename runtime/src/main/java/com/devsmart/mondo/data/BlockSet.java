@@ -10,19 +10,19 @@ public class BlockSet<T> implements Iterable<Block<T>>{
 
     public void add(Block<T> b) {
         if(!mBlockSet.isEmpty()) {
-            Block left = mBlockSet.lower(b);
+            Block<T> left = mBlockSet.lower(b);
             if(left != null && left.intersects(b)) {
                 mBlockSet.remove(left);
-                final Block newleft = new Block(left.offset, (int) (b.offset - left.offset), left.secondaryOffset, left.continer);
+                final Block newleft = new Block<T>(left.offset, (int) (b.offset - left.offset), left.secondaryOffset, left.continer);
 
-                Block right = mBlockSet.higher(left);
+                Block<T> right = mBlockSet.higher(left);
                 if(right != null && right.intersects(b)) {
                     mBlockSet.remove(right);
 
                     final long newRightOffset = b.offset + b.len;
                     final long increment = newRightOffset - right.offset;
 
-                    Block newRight = new Block(newRightOffset, (int) (right.end() - newRightOffset), right.secondaryOffset + increment, right.continer);
+                    Block<T> newRight = new Block<T>(newRightOffset, (int) (right.end() - newRightOffset), right.secondaryOffset + increment, right.continer);
                     add(newRight);
                 }
                 add(newleft);
@@ -33,7 +33,8 @@ public class BlockSet<T> implements Iterable<Block<T>>{
     }
 
     public Block<T> getBlockContaining(long offset) {
-        Block retval = mBlockSet.floor(Block.createKey(offset));
+        final Block<T> key = Block.createKey(offset);
+        Block retval = mBlockSet.floor(key);
         return retval.containsOffset(offset) ? retval : null;
     }
 
@@ -44,5 +45,9 @@ public class BlockSet<T> implements Iterable<Block<T>>{
     @Override
     public Iterator<Block<T>> iterator() {
         return mBlockSet.iterator();
+    }
+
+    public Block<T> getLast() {
+        return mBlockSet.last();
     }
 }
