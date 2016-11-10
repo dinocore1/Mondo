@@ -1,5 +1,6 @@
 package com.devsmart.mondo.storage;
 
+import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -8,7 +9,7 @@ import java.nio.channels.FileChannel;
 import java.util.ArrayList;
 
 
-public class FileBlockStorage implements BlockStorage {
+public class FileBlockStorage implements BlockStorage, Closeable {
 
 
     private final File mFile;

@@ -1,6 +1,8 @@
 package com.devsmart.mondo.data;
 
 
+import com.devsmart.mondo.storage.BlockStorage;
+
 import java.util.Iterator;
 import java.util.TreeSet;
 
@@ -35,7 +37,11 @@ public class BlockSet<T> implements Iterable<Block<T>>{
     public Block<T> getBlockContaining(long offset) {
         final Block<T> key = Block.createKey(offset);
         Block retval = mBlockSet.floor(key);
-        return retval.containsOffset(offset) ? retval : null;
+        if(retval == null) {
+            return null;
+        } else {
+            return retval.containsOffset(offset) ? retval : null;
+        }
     }
 
     public int size() {
@@ -49,5 +55,9 @@ public class BlockSet<T> implements Iterable<Block<T>>{
 
     public Block<T> getLast() {
         return mBlockSet.last();
+    }
+
+    public Block<T> next(Block<T> block) {
+        return mBlockSet.higher(block);
     }
 }

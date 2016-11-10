@@ -30,9 +30,50 @@ public class VirtualFile implements Closeable {
     public final FileMetadata mMetadata;
 
     private final BlockSet<BlockStorage> mBlockSet = new BlockSet<BlockStorage>();
+    private final SparseArray<BlockStorage> mBlocks = new SparseArray<BlockStorage>();
 
     public int mHandle;
     public int mOpenMode;
+
+    private final ByteBuffer mLoadingByteBuffer = ByteBuffer.allocate(BLOCK_SIZE);
+
+    private final LoadingCache<Long, BlockStorage> mBlockCache = CacheBuilder.newBuilder()
+            .removalListener(new RemovalListener<Long, BlockStorage>() {
+                @Override
+                public void onRemoval(RemovalNotification<Long, BlockStorage> notification) {
+
+                }
+            })
+            .maximumSize(50)
+            .build(new CacheLoader<Long, BlockStorage>() {
+                @Override
+                public BlockStorage load(Long key) throws Exception {
+                    MemoryBlockStorage retval = new MemoryBlockStorage(BLOCK_SIZE);
+                    long offset = key * BLOCK_SIZE;
+
+                    synchronized (mLoadingByteBuffer) {
+                        mLoadingByteBuffer.clear();
+
+                        boolean hasData = false;
+                        Block<BlockStorage> block;
+                        while ((block = mBlockSet.getBlockContaining(offset)) != null &&
+                                block.containsOffset(offset) &&
+                                mLoadingByteBuffer.remaining() > 0) {
+                            final long readOffset = offset - block.offset;
+                            offset += block.continer.readBlock(readOffset, mLoadingByteBuffer);
+                            hasData = true;
+                        }
+
+                        if(hasData) {
+                            mLoadingByteBuffer.flip();
+                            retval.writeBlock(0, mLoadingByteBuffer);
+                        }
+
+                    }
+
+                    return retval;
+                }
+            });
 
     private final LoadingCache<HashCode, FileBlockStorage> mFileBlockStorageCache = CacheBuilder.newBuilder()
             .removalListener(new RemovalListener<HashCode, FileBlockStorage>() {
@@ -118,11 +159,6 @@ public class VirtualFile implements Closeable {
                     throw new IOException(e);
                 }
             }
-
-            @Override
-            public void close() throws IOException {
-
-            }
         };
     }
 
@@ -134,34 +170,61 @@ public class VirtualFile implements Closeable {
     @Override
     public void close() throws IOException {
         //TODO: implement
+
+        fsync();
     }
 
     public synchronized void fsync() throws IOException {
         //TODO: implement
 
+        mBlockCache.invalidateAll();
+
     }
 
 
-    public synchronized int write(ByteBuffer inputBuffer, long size, long offset) throws IOException {
+    public synchronized int write(ByteBuffer buffer, long size, long offset) throws IOException {
+        try {
+            int bytesWritten = 0;
+
+            while (size > 0) {
+                final long blockIndex = offset / BLOCK_SIZE;
+                BlockStorage storage = mBlockCache.get(blockIndex);
+                long readOffset = offset - (blockIndex * BLOCK_SIZE);
+                int wrote = storage.writeBlock(readOffset, buffer);
+                bytesWritten += wrote;
+                offset += wrote;
+                size -= wrote;
+            }
 
 
-
-        //TODO: implement
-        return 0;
+            return bytesWritten;
+        } catch (Exception e) {
+            LOGGER.error("error writing to offset {}", offset, e);
+            throw new IOException(e);
+        }
 
     }
 
 
     public synchronized int read(ByteBuffer buffer, long size, long offset) throws IOException {
-        Block<BlockStorage> block = mBlockSet.getBlockContaining(offset);
-        if(block != null) {
-            BlockStorage storage = block.continer;
-            int bytesRead = storage.readBlock(block.secondaryOffset, buffer);
+        try {
+            int bytesRead = 0;
+
+            while (size > 0) {
+                final long blockIndex = offset / BLOCK_SIZE;
+                BlockStorage storage = mBlockCache.get(blockIndex);
+                long readOffset = offset - (blockIndex * BLOCK_SIZE);
+                int read = storage.readBlock(readOffset, buffer);
+                bytesRead += read;
+                offset += read;
+                size -= read;
+            }
+
+
             return bytesRead;
-        } else {
-            final String msg = String.format("no storage for offset: %d", offset);
-            LOGGER.error(msg);
-            throw new IOException(msg);
+        } catch (Exception e) {
+            LOGGER.error("error reading from offset {}", offset, e);
+            throw new IOException(e);
         }
     }
 
