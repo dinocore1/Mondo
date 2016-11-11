@@ -1,16 +1,16 @@
 package com.devsmart.mondo.storage;
 
 
-import com.devsmart.IOUtils;
-import com.devsmart.mondo.data.*;
+import com.devsmart.mondo.data.DataStreamBreaker;
+import com.devsmart.mondo.data.SecureSegment;
 import com.devsmart.mondo.kademlia.ID;
+import com.google.common.base.Function;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Throwables;
 import com.google.common.cache.*;
+import com.google.common.collect.Iterables;
 import com.google.common.hash.HashCode;
-import com.google.common.hash.HashFunction;
 import com.google.common.hash.Hashing;
-import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -30,9 +30,7 @@ public class VirtualFile implements Closeable {
     private final VirtualFilesystem mVirtualFS;
     public final VirtualFilesystem.Path mPath;
     public final FileMetadata mMetadata;
-
-    private final BlockSet<BlockStorage> mBlockSet = new BlockSet<BlockStorage>();
-    private final SparseArray<BlockStorage> mBlocks = new SparseArray<BlockStorage>();
+    private DataFile mDataFile;
 
     public int mHandle;
     public int mOpenMode;
@@ -52,16 +50,23 @@ public class VirtualFile implements Closeable {
     }
 
     private boolean loadFromLongtermStorage(long blockIndex, ByteBuffer buffer) throws IOException {
-        long offset = blockIndex * BLOCK_SIZE;
+        if(mDataFile == null || mDataFile.mParts == null) {
+            return false;
+        }
         boolean hasData = false;
-
-        Block<BlockStorage> block;
-        while ((block = mBlockSet.getBlockContaining(offset)) != null &&
-                block.containsOffset(offset) &&
-                mLoadingByteBuffer.hasRemaining()) {
-            final long readOffset = offset - block.offset;
-            offset += block.continer.readBlock(readOffset, buffer);
-            hasData = true;
+        long readOffset = blockIndex*BLOCK_SIZE;
+        long dataStart = 0;
+        int i = 0;
+        while(buffer.hasRemaining() && i < mDataFile.mParts.length) {
+            FilePart dataPart = mDataFile.mParts[i++];
+            final long dataEnd = dataStart + dataPart.getSize();
+            if(dataStart <= readOffset && readOffset < dataEnd) {
+                FileBlockStorage fbs = new FileBlockStorage(mFilesystemStorage.getFile(dataPart.getID()));
+                readOffset += fbs.readBlock(readOffset - dataStart, buffer);
+                fbs.close();
+                hasData = true;
+            }
+            dataStart = dataEnd;
         }
 
         return hasData;
@@ -109,27 +114,6 @@ public class VirtualFile implements Closeable {
                 }
             });
 
-    private final LoadingCache<HashCode, FileBlockStorage> mFileBlockStorageCache = CacheBuilder.newBuilder()
-            .removalListener(new RemovalListener<HashCode, FileBlockStorage>() {
-                @Override
-                public void onRemoval(RemovalNotification<HashCode, FileBlockStorage> notification) {
-                    try {
-                        notification.getValue().close();
-                    } catch (IOException e) {
-                        LOGGER.error("error closing file", e);
-                    }
-                }
-            })
-            .maximumSize(10)
-            .build(new CacheLoader<HashCode, FileBlockStorage>() {
-        @Override
-        public FileBlockStorage load(HashCode key) throws Exception {
-            byte[] keybytes = key.asBytes();
-            File f = mFilesystemStorage.getFile(new ID(keybytes, keybytes.length));
-            return new FileBlockStorage(f);
-        }
-    });
-
 
     public VirtualFile(VirtualFilesystem virtualFS, FilesystemStorage storage, VirtualFilesystem.Path path, FileMetadata metadata) throws IOException {
         Preconditions.checkArgument(virtualFS != null && storage != null);
@@ -137,8 +121,8 @@ public class VirtualFile implements Closeable {
         mFilesystemStorage = storage;
         mPath = path;
         mMetadata = metadata;
+        mDataFile = mVirtualFS.mDataObjects.get(metadata.mDataFileId);
 
-        setDataFile(mVirtualFS.mDataObjects.get(metadata.mDataFileId));
         mTmpBlockStorage = new FilebasedBlockStorage(mFilesystemStorage.createTempFile());
     }
 
@@ -155,46 +139,7 @@ public class VirtualFile implements Closeable {
     }
 
     public long getSize() {
-        return mBlockSet.getLast().end();
-    }
-
-    public void setDataFile(DataFile datafile) {
-        long offset = 0;
-        if(datafile != null && datafile.mParts != null && datafile.mParts.length >= 0) {
-            for (int i = 0; i < datafile.mParts.length; i++) {
-                FilePart part = datafile.mParts[i];
-                final long size = part.getSize();
-                Block<BlockStorage> block = new Block<BlockStorage>(offset, (int) size, 0, createBlockStorageWrapper(part.getSha1Checksum()));
-                mBlockSet.add(block);
-                offset += size;
-            }
-        }
-    }
-
-    private BlockStorage createBlockStorageWrapper(final HashCode sha1Checksum) {
-        return new BlockStorage() {
-            @Override
-            public int readBlock(long offset, ByteBuffer buffer) throws IOException {
-                try {
-                    FileBlockStorage storage = mFileBlockStorageCache.get(sha1Checksum);
-                    return storage.readBlock(offset, buffer);
-                } catch (ExecutionException e) {
-                    LOGGER.error("", e);
-                    throw new IOException(e);
-                }
-            }
-
-            @Override
-            public int writeBlock(long offset, ByteBuffer buffer) throws IOException {
-                try {
-                    FileBlockStorage storage = mFileBlockStorageCache.get(sha1Checksum);
-                    return storage.writeBlock(offset, buffer);
-                } catch (ExecutionException e) {
-                    LOGGER.error("", e);
-                    throw new IOException(e);
-                }
-            }
-        };
+        return mMetadata.getSize();
     }
 
     public void open(int openMode) {
@@ -225,14 +170,23 @@ public class VirtualFile implements Closeable {
 
         public FSyncTask() {
             mInput = createInputStream();
-            mBreaker = new DataStreamBreaker(Hashing.sha1(), 40);
+            mBreaker = new DataStreamBreaker(Hashing.sha1(), 16);
             mBreaker.setCallback(this);
         }
 
         public void run() throws IOException {
-            Iterable<SecureSegment> segments = mBreaker.getSegments(mInput);
-            //TODO: update
+            Iterable<FilePart> fileparts = Iterables.transform(mBreaker.getSegments(mInput), new Function<SecureSegment, FilePart>() {
+                @Override
+                public FilePart apply(SecureSegment input) {
+                    return new FilePart((int) input.length, input.secureHash.asBytes());
+                }
+            });
 
+            DataFile dataFile = new DataFile();
+            dataFile.mParts = Iterables.toArray(fileparts, FilePart.class);
+
+            mVirtualFS.mDataObjects.put(mMetadata.mDataFileId, dataFile);
+            mDataFile = dataFile;
         }
 
         @Override
@@ -251,8 +205,16 @@ public class VirtualFile implements Closeable {
         public void onNewSegment(SecureSegment segment) {
             LOGGER.info("segment {}", segment);
 
-            File dest = mFilesystemStorage.getFile(segment.getID());
-            mCurrentOutputFile.renameTo(dest);
+            synchronized (mFilesystemStorage) {
+                File dest = mFilesystemStorage.getFile(segment.getID());
+                if (!dest.exists()) {
+                    dest.getParentFile().mkdirs();
+                    mCurrentOutputFile.renameTo(dest);
+                    mCurrentOutputFile = null;
+                } else {
+                    LOGGER.info("segment already exists: {}", segment);
+                }
+            }
 
         }
     }

@@ -60,4 +60,8 @@ public class BlockSet<T> implements Iterable<Block<T>>{
     public Block<T> next(Block<T> block) {
         return mBlockSet.higher(block);
     }
+
+    public void clear() {
+        mBlockSet.clear();
+    }
 }

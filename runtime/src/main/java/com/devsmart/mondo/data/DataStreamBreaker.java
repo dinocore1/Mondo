@@ -51,15 +51,14 @@ public class DataStreamBreaker {
         long pos = 0;
         int bytesRead;
 
-        if(mCallback != null) {
-            outputStream = mCallback.createOutputStream();
-        }
-
         while((bytesRead = in.read(buffer, 0, buffer.length)) > 0) {
             for (int i = 0; i < bytesRead; i++) {
                 byte newByte = buffer[i];
                 long hash = buzHash.addByte(newByte);
                 hasher.putByte(newByte);
+                if(mCallback != null && outputStream == null) {
+                    outputStream = mCallback.createOutputStream();
+                }
                 if(outputStream != null) {
                     outputStream.write(newByte);
                 }
@@ -71,9 +70,6 @@ public class DataStreamBreaker {
                     if(outputStream != null) {
                         outputStream.close();
                         outputStream = null;
-                    }
-                    if(mCallback != null) {
-                        outputStream = mCallback.createOutputStream();
                     }
 
                     SecureSegment segment = new SecureSegment(last, length, hasher.hash());

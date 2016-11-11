@@ -1,6 +1,7 @@
 package com.devsmart.mondo.storage;
 
 
+import com.devsmart.mondo.kademlia.ID;
 import com.google.common.hash.HashCode;
 import org.jetbrains.annotations.NotNull;
 import org.mapdb.DataInput2;
@@ -28,6 +29,10 @@ public class FilePart {
 
     public HashCode getSha1Checksum() {
         return HashCode.fromBytes(mSha1Checksum);
+    }
+
+    public ID getID() {
+        return new ID(mSha1Checksum, 0);
     }
 
     @Override
