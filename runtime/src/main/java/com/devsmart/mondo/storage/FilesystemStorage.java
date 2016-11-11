@@ -11,6 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
+import java.util.UUID;
 
 public class FilesystemStorage {
 
@@ -27,8 +28,7 @@ public class FilesystemStorage {
     }
 
     public File createTempFile() throws IOException {
-        File tempFile = File.createTempFile("baking", ".dat", mTempDir);
-        return tempFile;
+        return new File(mTempDir, UUID.randomUUID().toString() + ".dat");
     }
 
     public boolean contains(ID id) {

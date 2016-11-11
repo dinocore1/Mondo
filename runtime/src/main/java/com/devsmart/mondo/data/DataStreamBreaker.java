@@ -6,12 +6,14 @@ import com.google.common.hash.Hasher;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.LinkedList;
 
 public class DataStreamBreaker {
 
     public interface Callback {
-        void onNewSegment(Segment segment);
+        OutputStream createOutputStream();
+        void onNewSegment(SecureSegment segment);
     }
 
     private static final int WINDOW_SIZE = 50;
@@ -28,7 +30,7 @@ public class DataStreamBreaker {
         mCallback = cb;
     }
 
-    private void newSegment(Segment s) {
+    private void newSegment(SecureSegment s) {
         if(mCallback != null) {
             mCallback.onNewSegment(s);
         }
@@ -36,6 +38,7 @@ public class DataStreamBreaker {
 
     public Iterable<SecureSegment> getSegments(InputStream in) throws IOException {
 
+        OutputStream outputStream = null;
         LinkedList<SecureSegment> retval = new LinkedList<SecureSegment>();
 
         Hasher hasher = mSecureHash.newHasher();
@@ -48,16 +51,31 @@ public class DataStreamBreaker {
         long pos = 0;
         int bytesRead;
 
+        if(mCallback != null) {
+            outputStream = mCallback.createOutputStream();
+        }
+
         while((bytesRead = in.read(buffer, 0, buffer.length)) > 0) {
             for (int i = 0; i < bytesRead; i++) {
                 byte newByte = buffer[i];
                 long hash = buzHash.addByte(newByte);
                 hasher.putByte(newByte);
+                if(outputStream != null) {
+                    outputStream.write(newByte);
+                }
                 pos++;
 
                 final long length = pos - last;
                 if ((hash & mMask) == 0) {
                     //segment boundery found
+                    if(outputStream != null) {
+                        outputStream.close();
+                        outputStream = null;
+                    }
+                    if(mCallback != null) {
+                        outputStream = mCallback.createOutputStream();
+                    }
+
                     SecureSegment segment = new SecureSegment(last, length, hasher.hash());
                     newSegment(segment);
                     retval.add(segment);
@@ -65,11 +83,16 @@ public class DataStreamBreaker {
                     last = pos;
                     buzHash.reset();
                     hasher = mSecureHash.newHasher();
+
                 }
             }
         }
 
         if(pos > last) {
+            if(outputStream != null) {
+                outputStream.close();
+            }
+
             SecureSegment segment = new SecureSegment(last, pos - last, hasher.hash());
             newSegment(segment);
             retval.add(segment);

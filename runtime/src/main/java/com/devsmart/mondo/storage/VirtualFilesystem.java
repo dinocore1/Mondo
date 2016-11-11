@@ -144,6 +144,10 @@ public class VirtualFilesystem implements Closeable {
         }
     }
 
+    public synchronized void updateFileMetadata(Path path, FileMetadata metadata) {
+        mFiles.put(path.mDBKey, metadata);
+    }
+
     public synchronized void mkdir(String filePath) {
         Path path = mPathPool.borrow();
         try {

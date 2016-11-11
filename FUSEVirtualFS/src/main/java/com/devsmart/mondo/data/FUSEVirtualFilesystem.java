@@ -2,6 +2,7 @@ package com.devsmart.mondo.data;
 
 
 import co.paralleluniverse.fuse.*;
+import com.devsmart.ThreadUtils;
 import com.devsmart.mondo.storage.*;
 import com.google.common.base.Preconditions;
 import org.slf4j.Logger;
@@ -11,10 +12,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.LinkedList;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
 
@@ -132,47 +130,31 @@ public class FUSEVirtualFilesystem extends AbstractFuseFilesystem {
 
     }
 
-    private static class ErrorCodeException extends Exception {
-        public final int mErrorCode;
-
-        public ErrorCodeException(int errorCode) {
-            mErrorCode = errorCode;
-        }
-    }
-
-    private VirtualFile openVirtualFile(String path) throws ErrorCodeException {
-        VirtualFile vfile;
-
-        FileMetadata metadata = mVirtualFS.getFile(path);
-        if(metadata == null || metadata.isDirectory()) {
-            throw new ErrorCodeException(-ErrorCodes.ENOENT());
-        }
-
-        final VirtualFilesystem.Path filePath = mVirtualFS.createPath();
-        filePath.setFilepath(path);
-
-        return new VirtualFile(mVirtualFS, mFilesystemStorage, filePath, metadata);
-    }
-
     @Override
     protected int open(String path, StructFuseFileInfo info) {
         LOGGER.info("open {}", path);
 
-        FileMetadata metadata;
+        final FileMetadata metadata;
         if((metadata = mVirtualFS.getFile(path)) != null) {
+            try {
 
-            final VirtualFilesystem.Path filePath = mVirtualFS.createPath();
-            filePath.setFilepath(path);
+                final VirtualFilesystem.Path filePath = mVirtualFS.createPath();
+                filePath.setFilepath(path);
 
-            VirtualFile vfile = new VirtualFile(mVirtualFS, mFilesystemStorage, filePath, metadata);
-            vfile.open(info.openMode());
+                Thread.currentThread().setContextClassLoader(ClassLoader.getSystemClassLoader());
+                VirtualFile vfile = new VirtualFile(mVirtualFS, mFilesystemStorage, filePath, metadata);
+                vfile.open(info.openMode());
 
-            final long fh = mFilehandleId++;
-            mOpenFiles.put(fh, vfile);
+                final long fh = mFilehandleId++;
+                mOpenFiles.put(fh, vfile);
 
-            info.fh(fh);
+                info.fh(fh);
 
-            return 0;
+                return 0;
+            } catch (Exception e) {
+                LOGGER.error("", e);
+                return -ErrorCodes.ENOMEM();
+            }
         } else {
             return -ErrorCodes.ENOENT();
         }
