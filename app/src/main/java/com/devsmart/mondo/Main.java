@@ -1,17 +1,20 @@
 package com.devsmart.mondo;
 
-import com.devsmart.mondo.storage.FilesystemStorage;
-import com.devsmart.mondo.storage.VirtualFilesystem;
+import co.paralleluniverse.javafs.JavaFS;
+import com.devsmart.mondo.storage.MondoFileSystemProvider;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.stream.JsonReader;
-import org.apache.commons.lang3.SystemUtils;
-import org.mapdb.DB;
-import org.mapdb.DBMaker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.*;
+import java.io.File;
+import java.io.FileReader;
+import java.net.URI;
+import java.nio.file.FileSystem;
+import java.nio.file.Paths;
+import java.nio.file.Path;
+import java.nio.file.spi.FileSystemProvider;
 
 public class Main {
 
@@ -19,13 +22,9 @@ public class Main {
 
     static File mRootDir;
     private static ConfigFile mConfigFile;
-    private static FilesystemStorage mFilesystemStorage;
-    private static VirtualFilesystem mVirtualFilesystem;
-    private static UserspaceFilesystem mUserspaceFS;
-    private static boolean mRunning;
+    private static boolean mRunning = false;
 
     public static Gson mGson = new GsonBuilder().create();
-
 
     private static final class ConfigFile {
         String username;
@@ -34,7 +33,17 @@ public class Main {
 
     }
 
+    private static MondoFileSystemProvider getMondoFileSystemProvider() {
+        for (FileSystemProvider fsr : FileSystemProvider.installedProviders()) {
+            if (fsr instanceof MondoFileSystemProvider)
+                return (MondoFileSystemProvider) fsr;
+        }
+        throw new AssertionError("Mondo file system not installed!");
+    }
+
     public static void main(String[] args) {
+
+
 
         try {
             String homedirPath = System.getProperty("user.home");
@@ -44,50 +53,29 @@ public class Main {
             JsonReader reader = new JsonReader(new FileReader(configFile));
             mConfigFile = mGson.fromJson(reader, ConfigFile.class);
 
-            mFilesystemStorage = new FilesystemStorage(new File(mRootDir, "data"));
 
-            DB db = DBMaker.fileDB(new File(mRootDir, "db"))
-                    .transactionEnable()
-                    .make();
+            FileSystemProvider mondoFileSystemProvider = getMondoFileSystemProvider();
 
-            Class<? extends UserspaceFilesystem> userspaceFPClass = null;
-            if(SystemUtils.IS_OS_UNIX) {
-                mVirtualFilesystem = new VirtualFilesystem(db, '/');
-                userspaceFPClass = (Class<? extends UserspaceFilesystem>) Main.class.getClassLoader().loadClass("com.devsmart.mondo.data.FUSEUserspaceFilesystem");
-            }
+            final String authority = mConfigFile.mount.replaceAll("/", "");
+            URI uri = URI.create("mondofs://" + authority);
+            FileSystem filesystem = mondoFileSystemProvider.newFileSystem(uri, null);
 
-            mUserspaceFS = userspaceFPClass.newInstance();
-            mUserspaceFS.init(mVirtualFilesystem, mFilesystemStorage);
-            final File mountDir = new File(mConfigFile.mount);
-            LOGGER.info("mount on: {}", mountDir.getAbsolutePath());
-            mUserspaceFS.mount(mountDir);
-
-            mRunning = true;
+            final Path mountpoint = Paths.get(mConfigFile.mount);
+            JavaFS.mount(filesystem, mountpoint, false, false);
 
             Runtime.getRuntime().addShutdownHook(new ShutdownThread());
-
+            mRunning = true;
             while(mRunning) {
                 Thread.sleep(500);
             }
 
+            System.out.println("Unmounting...");
+            JavaFS.unmount(mountpoint);
 
         } catch (Exception e) {
             LOGGER.error("", e);
         } finally {
-            if(mUserspaceFS != null) {
-                try {
-                    mUserspaceFS.unmount();
-                }catch (IOException e) {
-                    LOGGER.error("", e);
-                }
-            }
-            if(mVirtualFilesystem != null) {
-                try {
-                    mVirtualFilesystem.close();
-                } catch (IOException e) {
-                    LOGGER.error("", e);
-                }
-            }
+
         }
     }
 

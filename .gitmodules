@@ -1,3 +1,6 @@
 [submodule "libraries/JavaReedSolomon"]
 	path = libraries/JavaReedSolomon
 	url = git@github.com:Backblaze/JavaReedSolomon.git
+[submodule "libraries/bdiff"]
+	path = libraries/bdiff
+	url = git@github.com:dinocore1/bdiff.git

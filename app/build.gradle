@@ -16,6 +16,7 @@ buildscript {
 dependencies {
   compile project(':runtime')
   compile project(':FUSEVirtualFS')
+  //compile 'co.paralleluniverse:javafs:0.1.0'
 }
 
 jar {
