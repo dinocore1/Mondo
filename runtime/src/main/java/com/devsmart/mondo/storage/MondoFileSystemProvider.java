@@ -7,10 +7,14 @@ import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.FileAttribute;
 import java.nio.file.attribute.FileAttributeView;
+import java.nio.file.attribute.FileTime;
 import java.nio.file.spi.FileSystemProvider;
+import java.time.Instant;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 
 public class MondoFileSystemProvider extends FileSystemProvider {
@@ -68,12 +72,38 @@ public class MondoFileSystemProvider extends FileSystemProvider {
 
     @Override
     public SeekableByteChannel newByteChannel(Path path, Set<? extends OpenOption> options, FileAttribute<?>... attrs) throws IOException {
-        return null;
+        MondoFilesystem mondo = (MondoFilesystem) path.getFileSystem();
+        return mondo.newFileChannel(path, options, attrs);
     }
 
     @Override
     public DirectoryStream<Path> newDirectoryStream(Path dir, DirectoryStream.Filter<? super Path> filter) throws IOException {
-        return null;
+        return new DirectoryStream<Path>() {
+            @Override
+            public Iterator<Path> iterator() {
+                return new Iterator<Path>() {
+                    @Override
+                    public boolean hasNext() {
+                        return false;
+                    }
+
+                    @Override
+                    public Path next() {
+                        return null;
+                    }
+
+                    @Override
+                    public void remove() {
+
+                    }
+                };
+            }
+
+            @Override
+            public void close() throws IOException {
+
+            }
+        };
     }
 
     @Override
@@ -123,7 +153,53 @@ public class MondoFileSystemProvider extends FileSystemProvider {
 
     @Override
     public <A extends BasicFileAttributes> A readAttributes(Path path, Class<A> type, LinkOption... options) throws IOException {
-        return null;
+        return (A) new BasicFileAttributes() {
+
+            @Override
+            public FileTime lastModifiedTime() {
+                return FileTime.from(0, TimeUnit.SECONDS);
+            }
+
+            @Override
+            public FileTime lastAccessTime() {
+                return FileTime.from(0, TimeUnit.SECONDS);
+            }
+
+            @Override
+            public FileTime creationTime() {
+                return FileTime.from(0, TimeUnit.SECONDS);
+            }
+
+            @Override
+            public boolean isRegularFile() {
+                return false;
+            }
+
+            @Override
+            public boolean isDirectory() {
+                return false;
+            }
+
+            @Override
+            public boolean isSymbolicLink() {
+                return false;
+            }
+
+            @Override
+            public boolean isOther() {
+                return false;
+            }
+
+            @Override
+            public long size() {
+                return 0;
+            }
+
+            @Override
+            public Object fileKey() {
+                return null;
+            }
+        };
     }
 
     @Override
