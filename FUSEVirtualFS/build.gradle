@@ -6,8 +6,9 @@ targetCompatibility = 1.7
 dependencies {
     compile project(':runtime')
     //compile 'com.github.serceman:jnr-fuse:0.3'
-    //compile 'co.paralleluniverse:javafs:0.1.0'
-    compile 'co.paralleluniverse:javafs:0.1.1-SNAPSHOT'
+    compile 'co.paralleluniverse:javafs:0.1.0'
+    //compile 'co.paralleluniverse:javafs:0.1.1-SNAPSHOT'
+    compile 'com.google.jimfs:jimfs:1.1'
     testCompile 'junit:junit:4.12'
     testCompile 'org.mockito:mockito-core:1.+'
 }
