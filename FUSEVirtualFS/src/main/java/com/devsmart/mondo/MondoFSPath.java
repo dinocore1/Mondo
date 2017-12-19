@@ -84,15 +84,20 @@ public class MondoFSPath implements Path {
     }
 
     @Override
-    public Path getFileName() {
+    public MondoFSPath getFileName() {
         LOGGER.trace("getFileName()");
         return names.isEmpty() ? null : getName(names.size() - 1);
     }
 
     @Override
-    public Path getParent() {
+    public MondoFSPath getParent() {
         LOGGER.trace("getParent()");
-        return null;
+        if (names.isEmpty() || names.size() == 1 && root == null) {
+            return null;
+        }
+
+        return createPath(fs, root, names.subList(0, names.size() - 1));
+
     }
 
     @Override
@@ -102,7 +107,7 @@ public class MondoFSPath implements Path {
     }
 
     @Override
-    public Path getName(int index) {
+    public MondoFSPath getName(int index) {
         LOGGER.trace("getName()");
         checkArgument(index >= 0 && index < names.size(),
                 "index (%s) must be >= 0 and < name count (%s)",
@@ -143,7 +148,7 @@ public class MondoFSPath implements Path {
     }
 
     @Override
-    public Path normalize() {
+    public MondoFSPath normalize() {
         LOGGER.trace("normalize()");
         if (isNormal()) {
             return this;

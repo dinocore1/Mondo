@@ -13,7 +13,6 @@ import java.nio.file.attribute.FileAttributeView;
 import java.nio.file.spi.FileSystemProvider;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.locks.Lock;
 
 
 public class MondoFilesystemProvider extends FileSystemProvider {
@@ -102,6 +101,12 @@ public class MondoFilesystemProvider extends FileSystemProvider {
     @Override
     public void checkAccess(Path path, AccessMode... modes) throws IOException {
         LOGGER.trace("checkAccess(): {}", path);
+
+        MondoFile file = mStore.lookUpWithLock(checkPath(path));
+        if(file == null) {
+            throw new NoSuchFileException("");
+        }
+
     }
 
     @Override
@@ -113,25 +118,32 @@ public class MondoFilesystemProvider extends FileSystemProvider {
     @Override
     public <A extends BasicFileAttributes> A readAttributes(Path path, Class<A> type, LinkOption... options) throws IOException {
         LOGGER.trace("readAttributes(): {}", path);
-        Lock lock = mStore.readLock();
-        try {
 
-
-        } finally {
-            lock.unlock();
+        MondoFile file = mStore.lookUpWithLock(checkPath(path));
+        if(file == null) {
+            throw new NoSuchFileException("");
         }
-        return null;
+
+        return (A) file;
     }
 
     @Override
     public Map<String, Object> readAttributes(Path path, String attributes, LinkOption... options) throws IOException {
-        LOGGER.trace("readAttributes(): {}", path);
+        LOGGER.trace("readAttributes(): {} {}", path, attributes);
         return null;
     }
 
     @Override
     public void setAttribute(Path path, String attribute, Object value, LinkOption... options) throws IOException {
         LOGGER.trace("setAttribute(): {}", path);
+    }
+
+    private static MondoFSPath checkPath(Path path) {
+        if (path instanceof MondoFSPath) {
+            return (MondoFSPath) path;
+        } else {
+            throw new ProviderMismatchException("path " + path + " is not associated with Mondo file system");
+        }
     }
 
 }
