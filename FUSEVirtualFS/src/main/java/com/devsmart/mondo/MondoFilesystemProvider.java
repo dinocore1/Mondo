@@ -51,13 +51,15 @@ public class MondoFilesystemProvider extends FileSystemProvider {
     @Override
     public SeekableByteChannel newByteChannel(Path path, Set<? extends OpenOption> options, FileAttribute<?>... attrs) throws IOException {
         LOGGER.trace("newByteChannel() {}", path);
-        return null;
+        return mStore.newByteChannel(checkPath(path), options, attrs);
+
     }
 
     @Override
     public DirectoryStream<Path> newDirectoryStream(Path dir, DirectoryStream.Filter<? super Path> filter) throws IOException {
         LOGGER.trace("newDirectoryStream() {}", dir);
-        return null;
+
+        return mStore.createDirectoryStream(checkPath(dir), filter);
     }
 
     @Override
@@ -122,9 +124,13 @@ public class MondoFilesystemProvider extends FileSystemProvider {
         MondoFile file = mStore.lookUpWithLock(checkPath(path));
         if(file == null) {
             throw new NoSuchFileException("");
+        } else {
+            if(type == BasicFileAttributes.class) {
+                return (A) file;
+            } else {
+                return null;
+            }
         }
-
-        return (A) file;
     }
 
     @Override

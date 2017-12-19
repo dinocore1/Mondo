@@ -21,8 +21,8 @@ public class MondoFSPath implements Path {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(MondoFSPath.class);
 
-    private static final Joiner PATH_JOINER = Joiner.on('/');
-    private static final Splitter PATH_SPLITTER = Splitter.on('/');
+    public static final Joiner PATH_JOINER = Joiner.on('/');
+    public static final Splitter PATH_SPLITTER = Splitter.on('/');
 
     private static final Predicate<Object> NOT_EMPTY = new Predicate<Object>() {
         @Override
@@ -31,7 +31,7 @@ public class MondoFSPath implements Path {
         }
     };
 
-    private static final Function<String, Name> TO_NAME = new Function<String, Name>() {
+    public static final Function<String, Name> TO_NAME = new Function<String, Name>() {
         @Override
         public Name apply(String input) {
             return Name.create(input);
@@ -66,7 +66,7 @@ public class MondoFSPath implements Path {
     }
 
     @Override
-    public FileSystem getFileSystem() {
+    public MondoFilesystem getFileSystem() {
         LOGGER.trace("getFileSystem()");
         return fs;
     }

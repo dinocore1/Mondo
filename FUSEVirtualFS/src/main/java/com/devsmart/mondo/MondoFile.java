@@ -16,6 +16,7 @@ public class MondoFile implements BasicFileAttributes {
     long lastAccessedTime;
     long creationTime;
     boolean isFile;
+    public long size;
 
     @Override
     public FileTime lastModifiedTime() {
@@ -54,7 +55,7 @@ public class MondoFile implements BasicFileAttributes {
 
     @Override
     public long size() {
-        return 0;
+        return size;
     }
 
     @Override
