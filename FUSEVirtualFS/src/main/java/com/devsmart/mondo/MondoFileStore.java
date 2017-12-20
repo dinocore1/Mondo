@@ -19,6 +19,7 @@ import java.nio.channels.SeekableByteChannel;
 import java.nio.file.*;
 import java.nio.file.attribute.FileAttribute;
 import java.util.*;
+import java.util.concurrent.ConcurrentNavigableMap;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -34,7 +35,7 @@ public class MondoFileStore {
     private final ReadWriteLock mRWLock = new ReentrantReadWriteLock();
     private final Lock mReadLock;
     private final Lock mWriteLock;
-    private final NavigableSet<Object[]> mFiles;
+    private final BTreeMap<Object[], MondoFile> mFiles;
     private File mDBFile;
     private DB mDB;
 
@@ -58,15 +59,16 @@ public class MondoFileStore {
                 .transactionEnable()
                 .make();
 
-        mFiles = mDB.treeSet("files")
-                .serializer(new SerializerArrayTuple(Serializer.STRING_DELTA, Serializer.STRING, MondoFile.SERIALIZER))
+        mFiles = mDB.treeMap("files")
+                .keySerializer(new SerializerArrayTuple(Serializer.STRING_DELTA, Serializer.STRING))
+                .valueSerializer(MondoFile.SERIALIZER)
                 .createOrOpen();
 
-        SortedSet<Object[]> rootSet = mFiles.subSet(new Object[]{"", ""}, new Object[]{"", "", null});
-        if(rootSet.isEmpty()) {
+        final Object[] rootKey = new Object[]{"", ""};
+        if(!mFiles.containsKey(rootKey)) {
             MondoFile root = new MondoFile();
             root.isFile = false;
-            mFiles.add(new Object[]{"", "", root});
+            mFiles.put(rootKey, root);
         }
 
 
@@ -112,11 +114,8 @@ public class MondoFileStore {
         mReadLock.lock();
         try {
 
-            SortedSet<Object[]> file = mFiles.subSet(new Object[]{parentStr, filenameStr}, new Object[]{parentStr, filenameStr, null});
-            if(!file.isEmpty()) {
-                Object[] record = file.first();
-                retval = (MondoFile) record[2];
-            }
+            final Object[] key = new Object[]{parentStr, filenameStr};
+            retval = mFiles.get(key);
 
         } finally {
             mReadLock.unlock();
@@ -131,19 +130,20 @@ public class MondoFileStore {
     private class DBDirectoryStream implements DirectoryStream<Path> {
 
         private final MondoFSPath mDir;
-        private final SortedSet<Object[]> mDirFileSet;
+        private final ConcurrentNavigableMap<Object[], MondoFile> mDirFileSet;
         private final Predicate<Path> mPredicate;
 
         DBDirectoryStream(MondoFSPath dir, DirectoryStream.Filter<? super Path> filter) {
             mDir = dir.normalize();
             String dirStr = dir.toString();
-            mDirFileSet = mFiles.subSet(new Object[]{dirStr, "", null}, new Object[]{dirStr, null, null});
+            mDirFileSet = mFiles.subMap(new Object[]{dirStr, ""}, new Object[]{dirStr, null});
+
             mPredicate = createPredicate(filter);
         }
 
         @Override
         public Iterator<Path> iterator() {
-            Iterable<Path> paths = Iterables.transform(mDirFileSet, TO_PATH);
+            Iterable<Path> paths = Iterables.transform(mDirFileSet.keySet(), TO_PATH);
             paths = Iterables.filter(paths, mPredicate);
             return paths.iterator();
         }
@@ -193,7 +193,7 @@ public class MondoFileStore {
             file = createNewFile(path);
         }
 
-        return new MondoFileChannel(file);
+        return new MondoFileChannel(path, file);
 
     }
 
@@ -209,7 +209,10 @@ public class MondoFileStore {
             file.lastAccessedTime = file.creationTime;
             file.lastModifiedTime = file.creationTime;
 
-            mFiles.add(new Object[]{path.getParent().toString(), path.getFileName().toString(), file});
+            Object[] key = new Object[]{path.getParent().toString(), path.getFileName().toString()};
+            mFiles.put(key, file);
+
+            mDB.commit();
 
         } finally {
             mWriteLock.unlock();
@@ -219,12 +222,14 @@ public class MondoFileStore {
 
     private class MondoFileChannel implements SeekableByteChannel {
 
+        private final MondoFSPath mPath;
         private final MondoFile mFile;
         private boolean mIsOpen = false;
         private long mPosition = 0;
         private long mSize = 0;
 
-        public MondoFileChannel(MondoFile file) {
+        public MondoFileChannel(MondoFSPath path, MondoFile file) {
+            mPath = path;
             mFile = file;
             mIsOpen = true;
         }
@@ -279,9 +284,13 @@ public class MondoFileStore {
         public void close() throws IOException {
 
             mFile.size = mSize;
+
+            MondoFSPath path = mPath.normalize();
+            Object[] key = new Object[]{path.getParent().toString(), path.getFileName().toString()};
+
             mWriteLock.lock();
             try {
-                //TODO: update the file entry
+                mFiles.put(key, mFile);
             } finally {
                 mWriteLock.unlock();
             }

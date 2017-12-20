@@ -5,6 +5,7 @@ import org.jetbrains.annotations.NotNull;
 import org.mapdb.DataInput2;
 import org.mapdb.DataOutput2;
 import org.mapdb.Serializer;
+import org.mapdb.serializer.GroupSerializerObjectArray;
 
 import java.io.IOException;
 import java.nio.file.attribute.BasicFileAttributes;
@@ -63,13 +64,14 @@ public class MondoFile implements BasicFileAttributes {
         return null;
     }
 
-    public static final Serializer<MondoFile> SERIALIZER = new Serializer<MondoFile>() {
+    public static final GroupSerializerObjectArray<MondoFile> SERIALIZER = new GroupSerializerObjectArray<MondoFile>() {
 
         @Override
         public void serialize(@NotNull DataOutput2 out, @NotNull MondoFile value) throws IOException {
             out.packLong(value.lastAccessedTime);
             out.packLong(value.lastModifiedTime);
             out.packLong(value.creationTime);
+            out.packLong(value.size);
             out.writeBoolean(value.isFile);
         }
 
@@ -79,6 +81,7 @@ public class MondoFile implements BasicFileAttributes {
             retval.lastAccessedTime = input.unpackLong();
             retval.lastModifiedTime = input.unpackLong();
             retval.creationTime = input.unpackLong();
+            retval.size = input.unpackLong();
             retval.isFile = input.readBoolean();
             return retval;
         }
