@@ -1,8 +1,4 @@
-apply plugin: 'idea'
-
-
 def reed_solomon = project(':libraries:JavaReedSolomon')
-
 project.ext.set('reed_solomon', reed_solomon)
 
 allprojects {

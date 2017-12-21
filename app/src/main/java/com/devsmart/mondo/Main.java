@@ -1,17 +1,19 @@
 package com.devsmart.mondo;
 
+import co.paralleluniverse.javafs.JavaFS;
 import com.devsmart.mondo.storage.FilesystemStorage;
-import com.devsmart.mondo.storage.VirtualFilesystem;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.stream.JsonReader;
-import org.apache.commons.lang3.SystemUtils;
 import org.mapdb.DB;
 import org.mapdb.DBMaker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.*;
+import java.io.File;
+import java.io.FileReader;
+import java.io.IOException;
+import java.nio.file.Path;
 
 public class Main {
 
@@ -20,11 +22,10 @@ public class Main {
     static File mRootDir;
     private static ConfigFile mConfigFile;
     private static FilesystemStorage mFilesystemStorage;
-    private static VirtualFilesystem mVirtualFilesystem;
-    private static UserspaceFilesystem mUserspaceFS;
     private static boolean mRunning;
 
     public static Gson mGson = new GsonBuilder().create();
+    private static Path mMountPoint;
 
 
     private static final class ConfigFile {
@@ -50,17 +51,15 @@ public class Main {
                     .transactionEnable()
                     .make();
 
-            Class<? extends UserspaceFilesystem> userspaceFPClass = null;
-            if(SystemUtils.IS_OS_UNIX) {
-                mVirtualFilesystem = new VirtualFilesystem(db, '/');
-                userspaceFPClass = (Class<? extends UserspaceFilesystem>) Main.class.getClassLoader().loadClass("com.devsmart.mondo.data.FUSEUserspaceFilesystem");
-            }
+            MondoFileStore fileStore = new MondoFileStore(db);
+            MondoFilesystemProvider provider = new MondoFilesystemProvider(fileStore);
+            MondoFilesystem fs = new MondoFilesystem(provider, fileStore);
 
-            mUserspaceFS = userspaceFPClass.newInstance();
-            mUserspaceFS.init(mVirtualFilesystem, mFilesystemStorage);
             final File mountDir = new File(mConfigFile.mount);
             LOGGER.info("mount on: {}", mountDir.getAbsolutePath());
-            mUserspaceFS.mount(mountDir);
+            mMountPoint = mountDir.toPath();
+
+            JavaFS.mount(fs, mMountPoint, false, false);
 
             mRunning = true;
 
@@ -74,19 +73,10 @@ public class Main {
         } catch (Exception e) {
             LOGGER.error("", e);
         } finally {
-            if(mUserspaceFS != null) {
-                try {
-                    mUserspaceFS.unmount();
-                }catch (IOException e) {
-                    LOGGER.error("", e);
-                }
-            }
-            if(mVirtualFilesystem != null) {
-                try {
-                    mVirtualFilesystem.close();
-                } catch (IOException e) {
-                    LOGGER.error("", e);
-                }
+            try {
+                JavaFS.unmount(mMountPoint);
+            } catch (IOException e) {
+                LOGGER.error("", e);
             }
         }
     }

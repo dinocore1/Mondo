@@ -2,6 +2,8 @@ package com.devsmart.mondo;
 
 import co.paralleluniverse.javafs.JavaFS;
 import org.junit.Test;
+import org.mapdb.DB;
+import org.mapdb.DBMaker;
 
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
@@ -18,8 +20,10 @@ public class MountTest {
         //    os.writeUTF("JIMFS");
         //}
 
-        FileSystem fs = MondoFS.createMondoFS();
-
+        DB db = DBMaker.memoryDB().make();
+        MondoFileStore fileStore = new MondoFileStore(db);
+        MondoFilesystemProvider provider = new MondoFilesystemProvider(fileStore);
+        MondoFilesystem fs = new MondoFilesystem(provider, fileStore);
 
 
         final Path mnt = Files.createTempDirectory("jfsmnt");

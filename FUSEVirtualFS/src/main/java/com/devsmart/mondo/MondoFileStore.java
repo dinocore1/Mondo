@@ -3,11 +3,11 @@ package com.devsmart.mondo;
 
 import com.google.common.base.Function;
 import com.google.common.base.Predicate;
+import com.google.common.collect.ComparisonChain;
 import com.google.common.collect.Iterables;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Sets;
+import com.google.common.hash.HashCode;
+import org.jetbrains.annotations.NotNull;
 import org.mapdb.*;
-import org.mapdb.serializer.SerializerArray;
 import org.mapdb.serializer.SerializerArrayTuple;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,6 +15,7 @@ import org.slf4j.LoggerFactory;
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.channels.SeekableByteChannel;
 import java.nio.file.*;
 import java.nio.file.attribute.FileAttribute;
@@ -24,57 +25,85 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
-import static com.google.common.base.Preconditions.*;
+import static com.google.common.base.Preconditions.checkState;
 
 public class MondoFileStore {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(MondoFileStore.class);
 
-    private final File mStorageRoot;
+    private static final Function<MondoFSPath, Object[]> TO_DB_KEY = new Function<MondoFSPath, Object[]>() {
+
+        private String pathPartToStr(MondoFSPath path) {
+            String retval;
+            if(path != null) {
+                retval = path.toString();
+            } else {
+                retval = "";
+            }
+            return retval;
+        }
+
+        @Override
+        public Object[] apply(MondoFSPath input) {
+            input = input.normalize();
+            return new Object[]{pathPartToStr(input.getParent()), pathPartToStr(input.getFileName())};
+        }
+    };
+
+    public static final int BUFFER_SIZE = 8192;
+
+    private DB mDB;
+    private final File mDataRoot;
+    private final File mTempFileDir;
     private final FileSystemState mState;
     private final ReadWriteLock mRWLock = new ReentrantReadWriteLock();
     private final Lock mReadLock;
     private final Lock mWriteLock;
-    private final BTreeMap<Object[], MondoFile> mFiles;
-    private File mDBFile;
-    private DB mDB;
+    private final BTreeMap<Object[], FileMetadata> mFileMetadata;
+    private final BTreeMap<Long, BlockGroup> mBlockGroups;
+    private final Atomic.Long mBlockGroupId;
 
 
-    MondoFileStore(File storageRoot) {
-        checkNotNull(storageRoot);
+    MondoFileStore(DB db, File dataRoot) {
+        mDB = db;
+        mDataRoot = dataRoot;
 
-        if(!storageRoot.exists()) {
-            checkState(storageRoot.mkdirs());
+        mTempFileDir = new File(mDataRoot, "tmp");
+
+        if(!mTempFileDir.exists()) {
+            checkState(mTempFileDir.mkdirs());
         }
 
-        checkState(storageRoot.isDirectory());
-
-        mStorageRoot = storageRoot;
         mState = new FileSystemState();
         mReadLock = mRWLock.readLock();
         mWriteLock = mRWLock.writeLock();
 
-        mDBFile = new File(storageRoot, "mondo");
-        mDB = DBMaker.fileDB(mDBFile)
-                .transactionEnable()
-                .make();
-
-        mFiles = mDB.treeMap("files")
+        mFileMetadata = mDB.treeMap("fileMetadata")
                 .keySerializer(new SerializerArrayTuple(Serializer.STRING_DELTA, Serializer.STRING))
-                .valueSerializer(MondoFile.SERIALIZER)
+                .valueSerializer(FileMetadata.SERIALIZER)
                 .createOrOpen();
 
         final Object[] rootKey = new Object[]{"", ""};
-        if(!mFiles.containsKey(rootKey)) {
-            MondoFile root = new MondoFile();
-            root.isFile = false;
-            mFiles.put(rootKey, root);
+        if(!mFileMetadata.containsKey(rootKey)) {
+            FileMetadata root = new FileMetadata();
+            root.flags = FileMetadata.FLAG_DIR;
+            mFileMetadata.put(rootKey, root);
         }
 
 
+        mBlockGroups = mDB.treeMap("blockGroups")
+                .keySerializer(Serializer.LONG_DELTA)
+                .valueSerializer(BlockGroup.SERIALIZER)
+                .createOrOpen();
+
+        mBlockGroupId = mDB.atomicLong("blockGroupId")
+                .createOrOpen();
+
     }
 
-
+    File createTmpFile() {
+        return new File(mTempFileDir, UUID.randomUUID().toString() + ".dat");
+    }
 
     public FileSystemState state() {
         return mState;
@@ -90,33 +119,13 @@ public class MondoFileStore {
         return mWriteLock;
     }
 
-    public MondoFile lookUpWithLock(MondoFSPath path) {
-        MondoFile retval = null;
-        path = path.normalize();
-
-        String parentStr;
-        MondoFSPath parent = path.getParent();
-        if(parent != null) {
-            parentStr = parent.toString();
-        } else {
-            parentStr = "";
-        }
-
-        String filenameStr = null;
-        MondoFSPath filename = path.getFileName();
-        if(filename != null) {
-            filenameStr = filename.toString();
-        } else {
-            filenameStr = "";
-        }
-
+    public FileMetadata lookUpWithLock(MondoFSPath path) {
+        FileMetadata retval;
+        final Object[] key = TO_DB_KEY.apply(path);
 
         mReadLock.lock();
         try {
-
-            final Object[] key = new Object[]{parentStr, filenameStr};
-            retval = mFiles.get(key);
-
+            retval = mFileMetadata.get(key);
         } finally {
             mReadLock.unlock();
         }
@@ -130,13 +139,13 @@ public class MondoFileStore {
     private class DBDirectoryStream implements DirectoryStream<Path> {
 
         private final MondoFSPath mDir;
-        private final ConcurrentNavigableMap<Object[], MondoFile> mDirFileSet;
+        private final ConcurrentNavigableMap<Object[], FileMetadata> mDirFileSet;
         private final Predicate<Path> mPredicate;
 
         DBDirectoryStream(MondoFSPath dir, DirectoryStream.Filter<? super Path> filter) {
             mDir = dir.normalize();
             String dirStr = dir.toString();
-            mDirFileSet = mFiles.subMap(new Object[]{dirStr, ""}, new Object[]{dirStr, null});
+            mDirFileSet = mFileMetadata.subMap(new Object[]{dirStr, ""}, new Object[]{dirStr, null});
 
             mPredicate = createPredicate(filter);
         }
@@ -184,121 +193,55 @@ public class MondoFileStore {
 
     public SeekableByteChannel newByteChannel(MondoFSPath path, Set<? extends OpenOption> options, FileAttribute<?>[] attrs) throws IOException {
 
-        MondoFile file = lookUpWithLock(path);
-        if(Iterables.contains(options, StandardOpenOption.CREATE_NEW) && file != null){
+        FileMetadata metadata = lookUpWithLock(path);
+        if(Iterables.contains(options, StandardOpenOption.CREATE_NEW) && metadata != null){
             throw new FileAlreadyExistsException(path.toString());
         }
 
         if(Iterables.contains(options, StandardOpenOption.CREATE_NEW) || Iterables.contains(options, StandardOpenOption.CREATE)) {
-            file = createNewFile(path);
+            metadata = createNewFile(path);
         }
 
-        return new MondoFileChannel(path, file);
+        FileChannel scratchFileChannel = null;
+
+        int openMode = 0;
+        if(Iterables.contains(options, StandardOpenOption.WRITE)) {
+            File scratchFile = createTmpFile();
+            scratchFileChannel = FileChannel.open(scratchFile.toPath(), StandardOpenOption.READ, StandardOpenOption.WRITE, StandardOpenOption.CREATE_NEW);
+            openMode |= MondoFileChannel.MODE_WRITE;
+        }
+
+
+        if(Iterables.contains(options, StandardOpenOption.READ)) {
+            openMode |= MondoFileChannel.MODE_READ;
+        }
+
+        return new MondoFileChannel(openMode, scratchFileChannel, metadata);
 
     }
 
-    private MondoFile createNewFile(MondoFSPath path) {
-        MondoFile file;
+    private FileMetadata createNewFile(MondoFSPath path) {
+        FileMetadata file;
+
+        path = path.normalize();
+
+        file = new FileMetadata();
+        file.blockId = mBlockGroupId.incrementAndGet();
+        file.flags = 0;
+        file.creationTime = System.currentTimeMillis();
+        file.lastAccessedTime = file.creationTime;
+        file.lastModifiedTime = file.creationTime;
+
+        Object[] key = TO_DB_KEY.apply(path);
+
         mWriteLock.lock();
         try {
-            path = path.normalize();
-
-            file = new MondoFile();
-            file.isFile = true;
-            file.creationTime = System.currentTimeMillis();
-            file.lastAccessedTime = file.creationTime;
-            file.lastModifiedTime = file.creationTime;
-
-            Object[] key = new Object[]{path.getParent().toString(), path.getFileName().toString()};
-            mFiles.put(key, file);
-
+            mFileMetadata.put(key, file);
             mDB.commit();
-
         } finally {
             mWriteLock.unlock();
         }
         return file;
-    }
-
-    private class MondoFileChannel implements SeekableByteChannel {
-
-        private final MondoFSPath mPath;
-        private final MondoFile mFile;
-        private boolean mIsOpen = false;
-        private long mPosition = 0;
-        private long mSize = 0;
-
-        public MondoFileChannel(MondoFSPath path, MondoFile file) {
-            mPath = path;
-            mFile = file;
-            mIsOpen = true;
-        }
-
-        @Override
-        public int read(ByteBuffer dst) throws IOException {
-            return 0;
-        }
-
-        @Override
-        public int write(ByteBuffer src) throws IOException {
-            int bytesRead = 0;
-            byte[] buf = new byte[4096];
-            int remaining = src.remaining();
-
-            bytesRead = Math.min(buf.length, remaining);
-            src.get(buf, 0, bytesRead);
-
-            mPosition += bytesRead;
-            if(mPosition > mSize) {
-                mSize = mPosition;
-            }
-            return bytesRead;
-        }
-
-        @Override
-        public long position() throws IOException {
-            return mPosition;
-        }
-
-        @Override
-        public SeekableByteChannel position(long newPosition) throws IOException {
-            return null;
-        }
-
-        @Override
-        public long size() throws IOException {
-            return mSize;
-        }
-
-        @Override
-        public SeekableByteChannel truncate(long size) throws IOException {
-            return null;
-        }
-
-        @Override
-        public boolean isOpen() {
-            return mIsOpen;
-        }
-
-        @Override
-        public void close() throws IOException {
-
-            mFile.size = mSize;
-
-            MondoFSPath path = mPath.normalize();
-            Object[] key = new Object[]{path.getParent().toString(), path.getFileName().toString()};
-
-            mWriteLock.lock();
-            try {
-                mFiles.put(key, mFile);
-            } finally {
-                mWriteLock.unlock();
-            }
-
-            mIsOpen = false;
-
-
-        }
     }
 
 

@@ -104,7 +104,7 @@ public class MondoFilesystemProvider extends FileSystemProvider {
     public void checkAccess(Path path, AccessMode... modes) throws IOException {
         LOGGER.trace("checkAccess(): {}", path);
 
-        MondoFile file = mStore.lookUpWithLock(checkPath(path));
+        FileMetadata file = mStore.lookUpWithLock(checkPath(path));
         if(file == null) {
             throw new NoSuchFileException("");
         }
@@ -121,7 +121,7 @@ public class MondoFilesystemProvider extends FileSystemProvider {
     public <A extends BasicFileAttributes> A readAttributes(Path path, Class<A> type, LinkOption... options) throws IOException {
         LOGGER.trace("readAttributes(): {}", path);
 
-        MondoFile file = mStore.lookUpWithLock(checkPath(path));
+        FileMetadata file = mStore.lookUpWithLock(checkPath(path));
         if(file == null) {
             throw new NoSuchFileException("");
         } else {
