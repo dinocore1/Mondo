@@ -20,10 +20,12 @@ public class BlockGroup {
     public static final HashFunction HASH_FUNCTION = Hashing.sha1();
 
     public final int offset;
+    public final HashCode checksum;
     public final ImmutableList<HashCode> blocks;
 
-    public BlockGroup(int offset, ImmutableList<HashCode> blocks) {
+    public BlockGroup(int offset, HashCode checksum, ImmutableList<HashCode> blocks) {
         this.offset = offset;
+        this.checksum = checksum;
         this.blocks = blocks;
     }
 
@@ -31,6 +33,11 @@ public class BlockGroup {
         @Override
         public void serialize(@NotNull DataOutput2 out, @NotNull BlockGroup value) throws IOException {
             out.packInt(value.offset);
+
+            byte[] checksumData = value.checksum.asBytes();
+            checkState(checksumData.length == 20);
+            out.write(checksumData);
+
             int numBlocks = value.blocks.size();
             out.packInt(numBlocks);
             for(HashCode hashCode : value.blocks) {
@@ -46,6 +53,9 @@ public class BlockGroup {
             byte[] data = new byte[20];
             final int offset = input.readInt();
 
+            input.readFully(data);
+            HashCode checksum = HashCode.fromBytes(data);
+
             int numBlocks = input.unpackInt();
             ImmutableList.Builder<HashCode> builder = ImmutableList.builder();
 
@@ -54,7 +64,7 @@ public class BlockGroup {
                 builder.add(HashCode.fromBytes(data));
             }
 
-            return new BlockGroup(offset, builder.build());
+            return new BlockGroup(offset, checksum, builder.build());
         }
 
         @Override

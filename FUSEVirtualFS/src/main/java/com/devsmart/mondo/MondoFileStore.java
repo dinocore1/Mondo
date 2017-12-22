@@ -3,23 +3,25 @@ package com.devsmart.mondo;
 
 import com.google.common.base.Function;
 import com.google.common.base.Predicate;
-import com.google.common.collect.ComparisonChain;
 import com.google.common.collect.Iterables;
-import com.google.common.hash.HashCode;
-import org.jetbrains.annotations.NotNull;
-import org.mapdb.*;
+import org.mapdb.Atomic;
+import org.mapdb.BTreeMap;
+import org.mapdb.DB;
+import org.mapdb.Serializer;
 import org.mapdb.serializer.SerializerArrayTuple;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.SeekableByteChannel;
 import java.nio.file.*;
 import java.nio.file.attribute.FileAttribute;
-import java.util.*;
+import java.util.Iterator;
+import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentNavigableMap;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
@@ -27,7 +29,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import static com.google.common.base.Preconditions.checkState;
 
-public class MondoFileStore {
+public class MondoFileStore implements Closeable {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(MondoFileStore.class);
 
@@ -99,6 +101,11 @@ public class MondoFileStore {
         mBlockGroupId = mDB.atomicLong("blockGroupId")
                 .createOrOpen();
 
+    }
+
+    @Override
+    public void close() throws IOException {
+        mDB.close();
     }
 
     File createTmpFile() {
@@ -207,7 +214,9 @@ public class MondoFileStore {
         int openMode = 0;
         if(Iterables.contains(options, StandardOpenOption.WRITE)) {
             File scratchFile = createTmpFile();
-            scratchFileChannel = FileChannel.open(scratchFile.toPath(), StandardOpenOption.READ, StandardOpenOption.WRITE, StandardOpenOption.CREATE_NEW);
+            scratchFileChannel = FileChannel.open(scratchFile.toPath(),
+                    StandardOpenOption.READ, StandardOpenOption.WRITE,
+                    StandardOpenOption.CREATE_NEW, StandardOpenOption.DELETE_ON_CLOSE);
             openMode |= MondoFileChannel.MODE_WRITE;
         }
 
@@ -216,7 +225,17 @@ public class MondoFileStore {
             openMode |= MondoFileChannel.MODE_READ;
         }
 
-        return new MondoFileChannel(openMode, scratchFileChannel, metadata);
+        return new MondoFileChannel(openMode, scratchFileChannel, metadata, this);
+
+    }
+
+    void onFileChannelClose(MondoFileChannel mondoFileChannel) throws IOException {
+        if((mondoFileChannel.mOpenMode & MondoFileChannel.MODE_WRITE) > 0) {
+
+
+
+            mondoFileChannel.mScratchFile.close();
+        }
 
     }
 
@@ -226,7 +245,7 @@ public class MondoFileStore {
         path = path.normalize();
 
         file = new FileMetadata();
-        file.blockId = mBlockGroupId.incrementAndGet();
+        file.blockId = mBlockGroupId.getAndIncrement();
         file.flags = 0;
         file.creationTime = System.currentTimeMillis();
         file.lastAccessedTime = file.creationTime;

@@ -2,6 +2,8 @@ package com.devsmart.mondo;
 
 
 import com.devsmart.mondo.storage.SparseArray;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -10,21 +12,27 @@ import java.nio.channels.SeekableByteChannel;
 
 public class MondoFileChannel implements SeekableByteChannel {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(MondoFileChannel.class);
+
     public static final int MODE_READ = 0x1;
     public static final int MODE_WRITE = 0x2;
 
-    private int mOpenMode;
-    private FileChannel mScratchFile;
+    final int mOpenMode;
+    final FileChannel mScratchFile;
+    private final MondoFileStore mFSStore;
 
     private long mPosition;
     private long mSize;
     private SparseArray<Long> mBufferIndex = new SparseArray<Long>(10);
     private ByteBuffer mBuffer = ByteBuffer.allocate(MondoFileStore.BUFFER_SIZE);
     private int mBufferNum;
+    private boolean mIsOpen;
 
-    MondoFileChannel(int openMode, FileChannel scratchFile, FileMetadata metadata) {
+    MondoFileChannel(int openMode, FileChannel scratchFile, FileMetadata metadata, MondoFileStore store) {
         mOpenMode = openMode;
         mScratchFile = scratchFile;
+        mFSStore = store;
+        mIsOpen = true;
     }
 
     @Override
@@ -143,16 +151,20 @@ public class MondoFileChannel implements SeekableByteChannel {
 
     @Override
     public SeekableByteChannel truncate(long l) throws IOException {
+        LOGGER.trace("truncate()");
         return null;
     }
 
     @Override
     public boolean isOpen() {
-        return false;
+        LOGGER.trace("isOpen()");
+        return mIsOpen;
     }
 
     @Override
     public void close() throws IOException {
-
+        LOGGER.trace("close()");
+        mIsOpen = false;
+        mFSStore.onFileChannelClose(this);
     }
 }

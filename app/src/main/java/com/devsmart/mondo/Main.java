@@ -26,6 +26,7 @@ public class Main {
 
     public static Gson mGson = new GsonBuilder().create();
     private static Path mMountPoint;
+    private static MondoFileStore mFileStore;
 
 
     private static final class ConfigFile {
@@ -45,15 +46,16 @@ public class Main {
             JsonReader reader = new JsonReader(new FileReader(configFile));
             mConfigFile = mGson.fromJson(reader, ConfigFile.class);
 
-            mFilesystemStorage = new FilesystemStorage(new File(mRootDir, "data"));
+            File dataRoot = new File(mRootDir, "data");
+            //mFilesystemStorage = new FilesystemStorage(dataRoot);
 
             DB db = DBMaker.fileDB(new File(mRootDir, "db"))
                     .transactionEnable()
                     .make();
 
-            MondoFileStore fileStore = new MondoFileStore(db);
-            MondoFilesystemProvider provider = new MondoFilesystemProvider(fileStore);
-            MondoFilesystem fs = new MondoFilesystem(provider, fileStore);
+            mFileStore = new MondoFileStore(db, dataRoot);
+            MondoFilesystemProvider provider = new MondoFilesystemProvider(mFileStore);
+            MondoFilesystem fs = new MondoFilesystem(provider, mFileStore);
 
             final File mountDir = new File(mConfigFile.mount);
             LOGGER.info("mount on: {}", mountDir.getAbsolutePath());
@@ -75,6 +77,7 @@ public class Main {
         } finally {
             try {
                 JavaFS.unmount(mMountPoint);
+                mFileStore.close();
             } catch (IOException e) {
                 LOGGER.error("", e);
             }
