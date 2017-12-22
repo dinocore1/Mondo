@@ -232,9 +232,12 @@ public class MondoFileStore implements Closeable {
     void onFileChannelClose(MondoFileChannel mondoFileChannel) throws IOException {
         if((mondoFileChannel.mOpenMode & MondoFileChannel.MODE_WRITE) > 0) {
 
+            WriteOutBlockAction writeOutAction = new WriteOutBlockAction();
+            writeOutAction.mFileStore = this;
+            writeOutAction.mFileChannel = mondoFileChannel;
 
 
-            mondoFileChannel.mScratchFile.close();
+
         }
 
     }

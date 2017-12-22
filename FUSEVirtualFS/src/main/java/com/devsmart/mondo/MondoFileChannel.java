@@ -17,7 +17,7 @@ public class MondoFileChannel implements SeekableByteChannel {
     public static final int MODE_READ = 0x1;
     public static final int MODE_WRITE = 0x2;
 
-    final int mOpenMode;
+    int mOpenMode;
     final FileChannel mScratchFile;
     private final MondoFileStore mFSStore;
 
@@ -50,6 +50,7 @@ public class MondoFileChannel implements SeekableByteChannel {
         }
 
         int bytesRead = Math.min(mBuffer.remaining(), byteBuffer.remaining());
+        bytesRead = Math.min((int) (mSize - mPosition), bytesRead);
         for(int i=0;i<bytesRead;i++) {
             byteBuffer.put(mBuffer.get());
         }
