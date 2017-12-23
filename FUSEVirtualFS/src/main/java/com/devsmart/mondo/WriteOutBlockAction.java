@@ -2,6 +2,7 @@ package com.devsmart.mondo;
 
 
 import com.devsmart.mondo.data.Buzhash;
+import com.google.common.collect.ImmutableList;
 import com.google.common.hash.HashCode;
 import com.google.common.hash.HashFunction;
 import com.google.common.hash.Hasher;
@@ -13,6 +14,8 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
+
+import static com.google.common.base.Preconditions.checkState;
 
 public class WriteOutBlockAction {
 
@@ -28,21 +31,18 @@ public class WriteOutBlockAction {
     private Hasher mBlockHash;
     private Hasher mChecksumHash;
     private List<HashCode> mBlockHashList = new ArrayList<HashCode>();
+    private Buzhash mBuzHash;
 
 
-    public void doIt() throws IOException {
+    public BlockGroup doIt() throws IOException {
 
         mChecksumHash = HASH_FUNCTION.newHasher();
-
         mTempFile = mFileStore.createTmpFile();
-        FileOutputStream outputStream = new FileOutputStream(mTempFile);
         ByteBuffer buffer = ByteBuffer.allocate(BUFFER_SIZE);
-
-        Buzhash buzHash = new Buzhash(40);
+        mBuzHash = new Buzhash(40);
         mBlockHash = HASH_FUNCTION.newHasher();
 
         mFileChannel.mOpenMode |= MondoFileChannel.MODE_READ;
-
         mFileChannel.position(0);
 
         while(mFileChannel.position() < mFileChannel.size()) {
@@ -57,7 +57,7 @@ public class WriteOutBlockAction {
                 mChecksumHash.putByte(value);
                 mBlockHash.putByte(value);
                 mOutputStream.write(value);
-                long hash = buzHash.addByte(value);
+                long hash = mBuzHash.addByte(value);
 
 
                 if((hash & HASH_MASK) == 0) {
@@ -67,12 +67,14 @@ public class WriteOutBlockAction {
             buffer.clear();
         }
 
+        if(mOutputStream != null) {
+            segment();
+        }
 
-
+        return new BlockGroup(0, mChecksumHash.hash(), ImmutableList.copyOf(mBlockHashList));
     }
 
     private void ensureOutputStream() throws IOException {
-
         if(mOutputStream == null) {
             mOutputStream = new FileOutputStream(mTempFile);
         }
@@ -85,9 +87,15 @@ public class WriteOutBlockAction {
         final HashCode secureHash = mBlockHash.hash();
         mBlockHashList.add(secureHash);
         File f = mFileStore.getFileBlock(secureHash);
-        mTempFile.renameTo(f);
+        if(!f.exists()) {
+            f.getParentFile().mkdirs();
+            checkState(mTempFile.renameTo(f));
+        }
 
         mOutputStream = null;
+        mBlockHash = HASH_FUNCTION.newHasher();
+        mBuzHash.reset();
+
     }
 
 }

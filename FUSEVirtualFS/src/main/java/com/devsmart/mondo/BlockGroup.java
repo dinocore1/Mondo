@@ -51,7 +51,7 @@ public class BlockGroup {
         @Override
         public BlockGroup deserialize(@NotNull DataInput2 input, int available) throws IOException {
             byte[] data = new byte[20];
-            final int offset = input.readInt();
+            final int offset = input.unpackInt();
 
             input.readFully(data);
             HashCode checksum = HashCode.fromBytes(data);

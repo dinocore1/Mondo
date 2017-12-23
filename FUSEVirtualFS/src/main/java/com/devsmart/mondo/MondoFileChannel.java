@@ -2,13 +2,18 @@ package com.devsmart.mondo;
 
 
 import com.devsmart.mondo.storage.SparseArray;
+import com.google.common.hash.HashCode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.SeekableByteChannel;
+import java.nio.file.OpenOption;
+import java.nio.file.StandardOpenOption;
+import java.util.Arrays;
 
 public class MondoFileChannel implements SeekableByteChannel {
 
@@ -19,20 +24,45 @@ public class MondoFileChannel implements SeekableByteChannel {
 
     int mOpenMode;
     final FileChannel mScratchFile;
-    private final MondoFileStore mFSStore;
+    final FileMetadata mMetadata;
+    final MondoFileStore mFSStore;
+
+    private BlockGroup mBlockGroup;
+    private long[] mBlockGroupIndex;
 
     private long mPosition;
     private long mSize;
     private SparseArray<Long> mBufferIndex = new SparseArray<Long>(10);
     private ByteBuffer mBuffer = ByteBuffer.allocate(MondoFileStore.BUFFER_SIZE);
-    private int mBufferNum;
+    private int mBufferNum = -1;
     private boolean mIsOpen;
+
+    MondoFSPath mPath;
 
     MondoFileChannel(int openMode, FileChannel scratchFile, FileMetadata metadata, MondoFileStore store) {
         mOpenMode = openMode;
         mScratchFile = scratchFile;
+        mMetadata = metadata;
         mFSStore = store;
+        mSize = metadata.size;
         mIsOpen = true;
+    }
+
+    private void readBlockGroup() throws IOException {
+        mBlockGroup = mFSStore.mBlockGroups.get(mMetadata.blockId);
+
+        mBlockGroupIndex = new long[mBlockGroup.blocks.size()];
+        long pos = 0;
+        int i = 0;
+        for(HashCode hashCode : mBlockGroup.blocks){
+            File blockFile = mFSStore.getFileBlock(hashCode);
+            if(!blockFile.exists() || !blockFile.isFile()) {
+                throw new IOException("missing block: " + hashCode.toString());
+            }
+
+            mBlockGroupIndex[i++] = pos;
+            pos += blockFile.length();
+        }
     }
 
     @Override
@@ -45,7 +75,7 @@ public class MondoFileChannel implements SeekableByteChannel {
             return 0;
         }
 
-        if(mBuffer.remaining() == 0) {
+        if(mBuffer.remaining() == 0 || mBufferNum < 0) {
             loadBuffer(mBufferNum+1);
         }
 
@@ -140,9 +170,40 @@ public class MondoFileChannel implements SeekableByteChannel {
             mBufferNum = bufferNum;
 
         } else {
-            //TODO: load from somewhere else?
+            loadBufferFromBlockGroup(bufferNum);
         }
 
+    }
+
+    private void loadBufferFromBlockGroup(int bufferNum) throws IOException {
+        FileChannel fc;
+        mBuffer.clear();
+        if(mBlockGroupIndex == null) {
+            readBlockGroup();
+        }
+
+        long pos = bufferNum * mBuffer.capacity();
+
+
+        while(Math.min(mBuffer.remaining(), mSize - pos) > 0) {
+
+
+            int i = Arrays.binarySearch(mBlockGroupIndex, pos);
+            if(i < 0) {
+                i = -i - 1;
+            }
+
+            File blockFile = mFSStore.getFileBlock(mBlockGroup.blocks.get(i));
+            fc = FileChannel.open(blockFile.toPath(), StandardOpenOption.READ);
+
+            long offset = pos + mBuffer.position() - mBlockGroupIndex[i];
+            int bytesRead = fc.read(mBuffer, offset);
+
+            fc.close();
+
+            pos += bytesRead;
+        }
+        mBufferNum = bufferNum;
     }
 
     @Override
@@ -166,6 +227,7 @@ public class MondoFileChannel implements SeekableByteChannel {
     public void close() throws IOException {
         LOGGER.trace("close()");
         mIsOpen = false;
+        mMetadata.size = mSize;
         mFSStore.onFileChannelClose(this);
     }
 }

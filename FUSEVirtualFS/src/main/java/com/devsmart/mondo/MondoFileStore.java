@@ -4,6 +4,7 @@ package com.devsmart.mondo;
 import com.google.common.base.Function;
 import com.google.common.base.Predicate;
 import com.google.common.collect.Iterables;
+import com.google.common.hash.HashCode;
 import org.mapdb.Atomic;
 import org.mapdb.BTreeMap;
 import org.mapdb.DB;
@@ -23,6 +24,8 @@ import java.util.Iterator;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentNavigableMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -57,13 +60,15 @@ public class MondoFileStore implements Closeable {
     private DB mDB;
     private final File mDataRoot;
     private final File mTempFileDir;
+    private final File mDataFileDir;
     private final FileSystemState mState;
     private final ReadWriteLock mRWLock = new ReentrantReadWriteLock();
     private final Lock mReadLock;
     private final Lock mWriteLock;
     private final BTreeMap<Object[], FileMetadata> mFileMetadata;
-    private final BTreeMap<Long, BlockGroup> mBlockGroups;
+    final BTreeMap<Long, BlockGroup> mBlockGroups;
     private final Atomic.Long mBlockGroupId;
+    private final ScheduledExecutorService mIOScheduler = Executors.newScheduledThreadPool(1);
 
 
     MondoFileStore(DB db, File dataRoot) {
@@ -74,6 +79,11 @@ public class MondoFileStore implements Closeable {
 
         if(!mTempFileDir.exists()) {
             checkState(mTempFileDir.mkdirs());
+        }
+
+        mDataFileDir = new File(mDataRoot, "data");
+        if(!mDataFileDir.exists()) {
+            checkState(mDataFileDir.mkdirs());
         }
 
         mState = new FileSystemState();
@@ -141,6 +151,14 @@ public class MondoFileStore implements Closeable {
 
     public DirectoryStream<Path> createDirectoryStream(MondoFSPath dir, DirectoryStream.Filter<? super Path> filter) {
         return new DBDirectoryStream(dir, filter);
+    }
+
+    public File getFileBlock(HashCode hash) {
+        String filename = hash.toString();
+        File retval = new File(mDataFileDir, filename.substring(0, 2));
+        retval = new File(retval, filename.substring(2, 4));
+        retval = new File(retval, filename);
+        return retval;
     }
 
     private class DBDirectoryStream implements DirectoryStream<Path> {
@@ -225,21 +243,57 @@ public class MondoFileStore implements Closeable {
             openMode |= MondoFileChannel.MODE_READ;
         }
 
-        return new MondoFileChannel(openMode, scratchFileChannel, metadata, this);
+        MondoFileChannel mfc = new MondoFileChannel(openMode, scratchFileChannel, metadata, this);
+        mfc.mPath = path;
+        return mfc;
 
     }
 
     void onFileChannelClose(MondoFileChannel mondoFileChannel) throws IOException {
         if((mondoFileChannel.mOpenMode & MondoFileChannel.MODE_WRITE) > 0) {
-
-            WriteOutBlockAction writeOutAction = new WriteOutBlockAction();
-            writeOutAction.mFileStore = this;
-            writeOutAction.mFileChannel = mondoFileChannel;
-
-
-
+            mIOScheduler.execute(createFlushFileTask(mondoFileChannel));
         }
 
+    }
+
+    private Runnable createFlushFileTask(final MondoFileChannel fileChannel) {
+
+        return new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    final WriteOutBlockAction writeOutAction = new WriteOutBlockAction();
+                    writeOutAction.mFileStore = MondoFileStore.this;
+                    writeOutAction.mFileChannel = fileChannel;
+
+                    BlockGroup bg = writeOutAction.doIt();
+
+                    mWriteLock.lock();
+                    try {
+                        mBlockGroups.put(fileChannel.mMetadata.blockId, bg);
+
+                        Object[] key = TO_DB_KEY.apply(fileChannel.mPath);
+                        mFileMetadata.put(key, fileChannel.mMetadata);
+
+                        mDB.commit();
+
+                    } finally {
+                        mWriteLock.unlock();
+                    }
+
+                } catch (Exception e) {
+                    LOGGER.error("", e);
+                } finally {
+                    try {
+                        fileChannel.mScratchFile.close();
+                    } catch (IOException e) {
+                        LOGGER.error("", e);
+                    }
+                }
+
+
+            }
+        };
     }
 
     private FileMetadata createNewFile(MondoFSPath path) {
