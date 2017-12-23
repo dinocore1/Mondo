@@ -2,6 +2,7 @@ package com.devsmart.mondo;
 
 
 import com.devsmart.mondo.storage.SparseArray;
+import com.google.common.base.Throwables;
 import com.google.common.hash.HashCode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,6 +35,7 @@ public class MondoFileChannel implements SeekableByteChannel {
     private long mSize;
     private SparseArray<Long> mBufferIndex = new SparseArray<Long>(10);
     private ByteBuffer mBuffer = ByteBuffer.allocate(MondoFileStore.BUFFER_SIZE);
+    private boolean mIsBufferDirty;
     private int mBufferNum = -1;
     private boolean mIsOpen;
 
@@ -45,13 +47,12 @@ public class MondoFileChannel implements SeekableByteChannel {
         mMetadata = metadata;
         mFSStore = store;
         mSize = metadata.size;
+        mBlockGroup = mFSStore.mBlockGroups.get(mMetadata.blockId);
         mIsOpen = true;
     }
 
     private void readBlockGroup() throws IOException {
-        mBlockGroup = mFSStore.mBlockGroups.get(mMetadata.blockId);
-
-        mBlockGroupIndex = new long[mBlockGroup.blocks.size()];
+        mBlockGroupIndex = new long[mBlockGroup.blocks.size()+1];
         long pos = 0;
         int i = 0;
         for(HashCode hashCode : mBlockGroup.blocks){
@@ -60,50 +61,51 @@ public class MondoFileChannel implements SeekableByteChannel {
                 throw new IOException("missing block: " + hashCode.toString());
             }
 
+
             mBlockGroupIndex[i++] = pos;
             pos += blockFile.length();
+
+        }
+
+        mBlockGroupIndex[i] = pos;
+    }
+
+    @Override
+    public synchronized int read(ByteBuffer byteBuffer) throws IOException {
+        try {
+            LOGGER.trace("read()");
+
+            if ((mOpenMode & MODE_READ) == 0) {
+                throw new IOException("no read permission");
+            }
+
+            syncBuffer();
+
+            int bytesRead = Math.min(mBuffer.remaining(), byteBuffer.remaining());
+            for(int i=0;i<bytesRead;i++) {
+                byteBuffer.put(mBuffer.get());
+            }
+
+            mPosition += bytesRead;
+
+            LOGGER.trace("bytesRead: {}", bytesRead);
+            return bytesRead;
+        } catch (Exception e) {
+            LOGGER.error("", e);
+            Throwables.propagate(e);
+            return -1;
         }
     }
 
     @Override
-    public int read(ByteBuffer byteBuffer) throws IOException {
-        if((mOpenMode & MODE_READ) == 0) {
-            throw new IOException("no read permission");
-        }
+    public synchronized int write(ByteBuffer byteBuffer) throws IOException {
+        LOGGER.trace("write()");
 
-        if(byteBuffer.remaining() == 0) {
-            return 0;
-        }
-
-        if(mBuffer.remaining() == 0 || mBufferNum < 0) {
-            loadBuffer(mBufferNum+1);
-        }
-
-        int bytesRead = Math.min(mBuffer.remaining(), byteBuffer.remaining());
-        bytesRead = Math.min((int) (mSize - mPosition), bytesRead);
-        for(int i=0;i<bytesRead;i++) {
-            byteBuffer.put(mBuffer.get());
-        }
-
-        mPosition += bytesRead;
-
-        return bytesRead;
-    }
-
-    @Override
-    public int write(ByteBuffer byteBuffer) throws IOException {
         if((mOpenMode & MODE_WRITE) == 0) {
             throw new IOException("no write permission");
         }
 
-        if(byteBuffer.remaining() == 0) {
-            return 0;
-        }
-
-        if(mBuffer.remaining() == 0) {
-            flushBuffer();
-            mBufferNum++;
-        }
+        syncBuffer();
 
         int bytesWritten = Math.min(mBuffer.remaining(), byteBuffer.remaining());
         for(int i=0;i<bytesWritten;i++) {
@@ -115,77 +117,89 @@ public class MondoFileChannel implements SeekableByteChannel {
             mSize = mPosition;
         }
 
+        mIsBufferDirty = true;
+
         return bytesWritten;
     }
 
     private void flushBuffer() throws IOException {
+        if(mIsBufferDirty) {
+            Long pos = mBufferIndex.get(mBufferNum);
+            if (pos == null) {
+                pos = mScratchFile.size();
+                mBufferIndex.put(mBufferNum, pos);
+            }
+            mScratchFile.position(pos);
 
-        Long pos = mBufferIndex.get(mBufferNum);
-        if(pos == null) {
-            pos = mScratchFile.size();
+            mBuffer.flip();
+
+            do {
+                mScratchFile.write(mBuffer);
+            } while (mBuffer.remaining() > 0);
+
+            mBuffer.clear();
+            mIsBufferDirty = false;
         }
-        mScratchFile.position(pos);
-
-        mBuffer.flip();
-
-        do{
-            mScratchFile.write(mBuffer);
-        } while(mBuffer.remaining() > 0);
-
-        mBufferIndex.put(mBufferNum, pos);
-
-        mBuffer.clear();
     }
 
     @Override
-    public long position() throws IOException {
+    public synchronized long position() throws IOException {
+        LOGGER.trace("position() {}", mPosition);
         return mPosition;
     }
 
     @Override
-    public SeekableByteChannel position(long l) throws IOException {
-        int newBufferIndex = (int) (l / mBuffer.capacity());
-        int offset = (int) (l % mBuffer.capacity());
+    public synchronized SeekableByteChannel position(long l) throws IOException {
+        LOGGER.trace("position({})", l);
+        mPosition = l;
+        return this;
+    }
 
-        if(newBufferIndex != mBufferNum) {
+    private void syncBuffer() throws IOException {
+        int newBufferIndex = (int) (mPosition / mBuffer.capacity());
+        int offset = (int) (mPosition % mBuffer.capacity());
+
+        if(mBufferNum != newBufferIndex) {
+            flushBuffer();
             loadBuffer(newBufferIndex);
         }
 
         mBuffer.position(offset);
-        mPosition = l;
-
-        return this;
     }
 
     private void loadBuffer(int bufferNum) throws IOException {
         Long pos = mBufferIndex.get(bufferNum);
         if(pos != null) {
-            mScratchFile.position(pos);
-
             mBuffer.clear();
-            do {
-                mScratchFile.read(mBuffer);
-            } while(mBuffer.remaining() > 0);
-            mBuffer.flip();
-            mBufferNum = bufferNum;
+            mBuffer.limit((int) Math.min(mBuffer.capacity(), mSize - pos));
 
-        } else {
+            do {
+                mScratchFile.read(mBuffer, pos);
+            } while(mBuffer.remaining() > 0);
+
+            mBuffer.flip();
+
+        } else if(mBlockGroup != null) {
             loadBufferFromBlockGroup(bufferNum);
         }
+
+        mBufferNum = bufferNum;
 
     }
 
     private void loadBufferFromBlockGroup(int bufferNum) throws IOException {
         FileChannel fc;
-        mBuffer.clear();
         if(mBlockGroupIndex == null) {
             readBlockGroup();
         }
 
         long pos = bufferNum * mBuffer.capacity();
 
+        mBuffer.clear();
+        mBuffer.limit((int) Math.min(mBuffer.capacity(), mSize - pos));
 
-        while(Math.min(mBuffer.remaining(), mSize - pos) > 0) {
+
+        while(mBuffer.remaining() > 0) {
 
 
             int i = Arrays.binarySearch(mBlockGroupIndex, pos);
@@ -193,38 +207,42 @@ public class MondoFileChannel implements SeekableByteChannel {
                 i = -i - 1;
             }
 
+            i = Math.max(0, i-1);
+
             File blockFile = mFSStore.getFileBlock(mBlockGroup.blocks.get(i));
             fc = FileChannel.open(blockFile.toPath(), StandardOpenOption.READ);
 
-            long offset = pos + mBuffer.position() - mBlockGroupIndex[i];
+            long offset = pos - mBlockGroupIndex[i];
             int bytesRead = fc.read(mBuffer, offset);
-
             fc.close();
 
             pos += bytesRead;
         }
-        mBufferNum = bufferNum;
+
+        mBuffer.flip();
+
     }
 
     @Override
-    public long size() throws IOException {
+    public synchronized long size() throws IOException {
+        LOGGER.trace("size() {}", mSize);
         return mSize;
     }
 
     @Override
-    public SeekableByteChannel truncate(long l) throws IOException {
+    public synchronized SeekableByteChannel truncate(long l) throws IOException {
         LOGGER.trace("truncate()");
         return null;
     }
 
     @Override
-    public boolean isOpen() {
+    public synchronized boolean isOpen() {
         LOGGER.trace("isOpen()");
         return mIsOpen;
     }
 
     @Override
-    public void close() throws IOException {
+    public synchronized void close() throws IOException {
         LOGGER.trace("close()");
         mIsOpen = false;
         mMetadata.size = mSize;

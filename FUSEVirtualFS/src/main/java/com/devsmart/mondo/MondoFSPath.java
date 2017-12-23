@@ -73,25 +73,22 @@ public class MondoFSPath implements Path {
 
     @Override
     public boolean isAbsolute() {
-        LOGGER.trace("isAbsolute()");
         return root != null;
     }
 
     @Override
     public MondoFSPath getRoot() {
         LOGGER.trace("getRoot()");
-        return null;
+        return createPath(fs, root, Collections.EMPTY_LIST);
     }
 
     @Override
     public MondoFSPath getFileName() {
-        LOGGER.trace("getFileName()");
         return names.isEmpty() ? null : getName(names.size() - 1);
     }
 
     @Override
     public MondoFSPath getParent() {
-        LOGGER.trace("getParent()");
         if (names.isEmpty() || names.size() == 1 && root == null) {
             return null;
         }
@@ -102,13 +99,11 @@ public class MondoFSPath implements Path {
 
     @Override
     public int getNameCount() {
-        LOGGER.trace("getNameCount()");
         return names.size();
     }
 
     @Override
     public MondoFSPath getName(int index) {
-        LOGGER.trace("getName()");
         checkArgument(index >= 0 && index < names.size(),
                 "index (%s) must be >= 0 and < name count (%s)",
                 index,
@@ -149,7 +144,6 @@ public class MondoFSPath implements Path {
 
     @Override
     public MondoFSPath normalize() {
-        LOGGER.trace("normalize()");
         if (isNormal()) {
             return this;
         }
@@ -268,7 +262,6 @@ public class MondoFSPath implements Path {
 
     @Override
     public Iterator<Path> iterator() {
-        LOGGER.trace("iterator()");
         return asList().iterator();
     }
 
@@ -288,8 +281,6 @@ public class MondoFSPath implements Path {
 
     @Override
     public int compareTo(Path path) {
-        LOGGER.trace("compareTo(): {}", path);
-
         MondoFSPath other = (MondoFSPath) path;
 
         return ComparisonChain.start()

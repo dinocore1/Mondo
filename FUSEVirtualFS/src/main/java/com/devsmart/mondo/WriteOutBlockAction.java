@@ -7,6 +7,8 @@ import com.google.common.hash.HashCode;
 import com.google.common.hash.HashFunction;
 import com.google.common.hash.Hasher;
 import com.google.common.hash.Hashing;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -19,9 +21,11 @@ import static com.google.common.base.Preconditions.checkState;
 
 public class WriteOutBlockAction {
 
+    public static final Logger LOGGER = LoggerFactory.getLogger(WriteOutBlockAction.class);
+
     public static final HashFunction HASH_FUNCTION = Hashing.sha1();
     public static final int BUFFER_SIZE = 8196;
-    public static final long HASH_MASK = (1 << 16) - 1;
+    public static final long HASH_MASK = (1 << 20) - 1;
 
     MondoFileStore mFileStore;
     MondoFileChannel mFileChannel;
@@ -47,11 +51,10 @@ public class WriteOutBlockAction {
 
         while(mFileChannel.position() < mFileChannel.size()) {
 
-            ensureOutputStream();
-
             mFileChannel.read(buffer);
             buffer.flip();
             while(buffer.remaining() > 0) {
+                ensureOutputStream();
                 final byte value = buffer.get();
 
                 mChecksumHash.putByte(value);
@@ -85,6 +88,7 @@ public class WriteOutBlockAction {
         mOutputStream.close();
 
         final HashCode secureHash = mBlockHash.hash();
+        LOGGER.info("adding block: {}", secureHash);
         mBlockHashList.add(secureHash);
         File f = mFileStore.getFileBlock(secureHash);
         if(!f.exists()) {

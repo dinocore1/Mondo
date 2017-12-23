@@ -161,6 +161,17 @@ public class MondoFileStore implements Closeable {
         return retval;
     }
 
+    public void delete(MondoFSPath path) {
+        Object[] key = TO_DB_KEY.apply(path);
+        mWriteLock.lock();
+        try {
+            mFileMetadata.remove(key);
+            mDB.commit();
+        } finally {
+            mWriteLock.unlock();
+        }
+    }
+
     private class DBDirectoryStream implements DirectoryStream<Path> {
 
         private final MondoFSPath mDir;

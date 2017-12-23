@@ -50,7 +50,7 @@ public class MondoFilesystemProvider extends FileSystemProvider {
 
     @Override
     public SeekableByteChannel newByteChannel(Path path, Set<? extends OpenOption> options, FileAttribute<?>... attrs) throws IOException {
-        LOGGER.trace("newByteChannel() {}", path);
+        LOGGER.trace("newByteChannel({}, {})", path, options);
         return mStore.newByteChannel(checkPath(path), options, attrs);
 
     }
@@ -70,6 +70,7 @@ public class MondoFilesystemProvider extends FileSystemProvider {
     @Override
     public void delete(Path path) throws IOException {
         LOGGER.trace("delete(): {}", path);
+        mStore.delete(checkPath(path));
     }
 
     @Override
