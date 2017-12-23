@@ -278,6 +278,7 @@ public class MondoFileStore implements Closeable {
                     writeOutAction.mFileChannel = fileChannel;
 
                     BlockGroup bg = writeOutAction.doIt();
+                    LOGGER.info("flush file: {} {}", fileChannel.mPath, bg.checksum);
 
                     mWriteLock.lock();
                     try {

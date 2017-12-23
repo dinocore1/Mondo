@@ -16,6 +16,8 @@ import java.nio.file.OpenOption;
 import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
 
+import static com.google.common.base.Preconditions.checkState;
+
 public class MondoFileChannel implements SeekableByteChannel {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(MondoFileChannel.class);
@@ -72,29 +74,29 @@ public class MondoFileChannel implements SeekableByteChannel {
 
     @Override
     public synchronized int read(ByteBuffer byteBuffer) throws IOException {
-        try {
-            LOGGER.trace("read()");
+        LOGGER.trace("read()");
 
-            if ((mOpenMode & MODE_READ) == 0) {
-                throw new IOException("no read permission");
-            }
+        if ((mOpenMode & MODE_READ) == 0) {
+            throw new IOException("no read permission");
+        }
 
-            syncBuffer();
-
-            int bytesRead = Math.min(mBuffer.remaining(), byteBuffer.remaining());
-            for(int i=0;i<bytesRead;i++) {
-                byteBuffer.put(mBuffer.get());
-            }
-
-            mPosition += bytesRead;
-
-            LOGGER.trace("bytesRead: {}", bytesRead);
-            return bytesRead;
-        } catch (Exception e) {
-            LOGGER.error("", e);
-            Throwables.propagate(e);
+        if(mPosition >= mSize) {
+            //EOF
             return -1;
         }
+
+        syncBuffer();
+
+        int bytesRead = Math.min(mBuffer.remaining(), byteBuffer.remaining());
+
+        for(int i=0;i<bytesRead;i++) {
+            byteBuffer.put(mBuffer.get());
+        }
+
+        mPosition += bytesRead;
+
+        LOGGER.trace("bytesRead: {}", bytesRead);
+        return bytesRead;
     }
 
     @Override
@@ -123,23 +125,18 @@ public class MondoFileChannel implements SeekableByteChannel {
     }
 
     private void flushBuffer() throws IOException {
-        if(mIsBufferDirty) {
-            Long pos = mBufferIndex.get(mBufferNum);
-            if (pos == null) {
-                pos = mScratchFile.size();
-                mBufferIndex.put(mBufferNum, pos);
-            }
-            mScratchFile.position(pos);
-
-            mBuffer.flip();
-
-            do {
-                mScratchFile.write(mBuffer);
-            } while (mBuffer.remaining() > 0);
-
-            mBuffer.clear();
-            mIsBufferDirty = false;
+        Long pos = mBufferIndex.get(mBufferNum);
+        if (pos == null) {
+            pos = mScratchFile.size();
+            mBufferIndex.put(mBufferNum, pos);
         }
+
+        mBuffer.flip();
+
+        mScratchFile.write(mBuffer, pos);
+
+        mBuffer.clear();
+        mIsBufferDirty = false;
     }
 
     @Override
@@ -160,7 +157,9 @@ public class MondoFileChannel implements SeekableByteChannel {
         int offset = (int) (mPosition % mBuffer.capacity());
 
         if(mBufferNum != newBufferIndex) {
-            flushBuffer();
+            if(mIsBufferDirty) {
+                flushBuffer();
+            }
             loadBuffer(newBufferIndex);
         }
 
@@ -168,23 +167,27 @@ public class MondoFileChannel implements SeekableByteChannel {
     }
 
     private void loadBuffer(int bufferNum) throws IOException {
-        Long pos = mBufferIndex.get(bufferNum);
-        if(pos != null) {
-            mBuffer.clear();
-            mBuffer.limit((int) Math.min(mBuffer.capacity(), mSize - pos));
-
-            do {
-                mScratchFile.read(mBuffer, pos);
-            } while(mBuffer.remaining() > 0);
-
-            mBuffer.flip();
-
+        if(mBufferIndex.get(bufferNum) != null) {
+            loadBufferFromScratchFile(bufferNum);
         } else if(mBlockGroup != null) {
             loadBufferFromBlockGroup(bufferNum);
+            mIsBufferDirty = false;
         }
 
         mBufferNum = bufferNum;
+    }
 
+    private void loadBufferFromScratchFile(int bufferNum) throws IOException {
+        Long scratchPos = mBufferIndex.get(bufferNum);
+        checkState(scratchPos != null);
+
+        mBuffer.clear();
+
+        while(mBuffer.remaining() > 0) {
+            mScratchFile.read(mBuffer, scratchPos);
+        }
+
+        mBuffer.flip();
     }
 
     private void loadBufferFromBlockGroup(int bufferNum) throws IOException {
@@ -193,39 +196,32 @@ public class MondoFileChannel implements SeekableByteChannel {
             readBlockGroup();
         }
 
+        mBuffer.clear();
+
         long pos = bufferNum * mBuffer.capacity();
 
-        mBuffer.clear();
-        mBuffer.limit((int) Math.min(mBuffer.capacity(), mSize - pos));
+        int i = Arrays.binarySearch(mBlockGroupIndex, pos);
+        if(i < 0) {
+            i = -i - 2;
+        }
 
-
-        while(mBuffer.remaining() > 0) {
-
-
-            int i = Arrays.binarySearch(mBlockGroupIndex, pos);
-            if(i < 0) {
-                i = -i - 1;
-            }
-
-            i = Math.max(0, i-1);
-
+        if(i < mBlockGroup.blocks.size()) {
             File blockFile = mFSStore.getFileBlock(mBlockGroup.blocks.get(i));
             fc = FileChannel.open(blockFile.toPath(), StandardOpenOption.READ);
 
             long offset = pos - mBlockGroupIndex[i];
-            int bytesRead = fc.read(mBuffer, offset);
-            fc.close();
+            fc.read(mBuffer, offset);
 
-            pos += bytesRead;
+            fc.close();
+            mBuffer.flip();
         }
 
-        mBuffer.flip();
+
 
     }
 
     @Override
     public synchronized long size() throws IOException {
-        LOGGER.trace("size() {}", mSize);
         return mSize;
     }
 
